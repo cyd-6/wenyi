@@ -120,7 +120,7 @@ class TestPdfIngest(unittest.TestCase):
                 {
                     "language": {"source": "en", "target": "zh"},
                     "llm": {
-                        "provider": "fake",
+                        "api_format": "fake",
                         "tiers": {"strong": {"model": "fake"}},
                     },
                     "paths": {"state_dir": state_dir},
@@ -146,7 +146,7 @@ class TestPdfIngest(unittest.TestCase):
                 {
                     "language": {"source": "en", "target": "zh"},
                     "llm": {
-                        "provider": "fake",
+                        "api_format": "fake",
                         "tiers": {"strong": {"model": "fake"}},
                     },
                     "paths": {"state_dir": state_dir},

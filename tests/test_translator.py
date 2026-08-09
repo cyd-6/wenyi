@@ -23,7 +23,7 @@ class TestTranslatorAlignment(unittest.TestCase):
             {
                 "language": {"source": "ja", "target": "zh"},
                 "llm": {
-                    "provider": "fake",
+                    "api_format": "fake",
                     "tiers": {
                         "strong": {"model": "deepseek-v4-pro"},
                         "cheap": {"model": "deepseek-v4-flash"},

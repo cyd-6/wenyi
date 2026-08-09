@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from itertools import count
 from typing import Any, Iterator
 
+from ..config import validate_llm_tier
 from .json_parser import parse_json_loose
 from .usage import UsageTracker
 
@@ -67,6 +68,7 @@ class LLMClient(ABC):
     @contextmanager
     def request_activity(self, *, stage: str | None, tier: str) -> Iterator[str]:
         """为一次顶层模型请求发送 started/finished 生命周期事件。"""
+        validate_llm_tier(tier)
         with _ACTIVITY_REQUEST_ID_LOCK:
             request_id = f"llm-{next(_ACTIVITY_REQUEST_IDS)}"
         self._emit_activity(

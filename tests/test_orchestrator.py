@@ -69,7 +69,7 @@ def _config(state_dir: str):
         {
             "language": {"source": "ja", "target": "zh"},
             "llm": {
-                "provider": "fake",
+                "api_format": "fake",
                 "tiers": {"strong": {"model": "p"}, "cheap": {"model": "f"}},
             },
             "segment": {"max_chars_per_batch": 1800},
