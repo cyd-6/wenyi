@@ -91,9 +91,15 @@ def normalize_base_url(value: str, api_format: APIFormat) -> str:
         raise ValueError("llm.base_url 不允许包含 query 或 fragment")
 
     path = parsed.path.rstrip("/")
-    suffix = "/chat/completions" if api_format == "openai" else "/v1/messages"
-    if path.endswith(suffix):
-        path = path[: -len(suffix)].rstrip("/")
+    suffixes = (
+        ("/chat/completions",)
+        if api_format == "openai"
+        else ("/v1/messages", "/v1")
+    )
+    for suffix in suffixes:
+        if path.endswith(suffix):
+            path = path[: -len(suffix)].rstrip("/")
+            break
     normalized = urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
     return normalized.rstrip("/")
 

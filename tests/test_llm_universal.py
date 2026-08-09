@@ -52,6 +52,14 @@ class TestURLNormalization(unittest.TestCase):
             "https://example.test/proxy",
         )
         self.assertEqual(
+            normalize_base_url("https://example.test/v1/", "anthropic"),
+            "https://example.test",
+        )
+        self.assertEqual(
+            normalize_base_url("https://example.test/proxy/v1/", "anthropic"),
+            "https://example.test/proxy",
+        )
+        self.assertEqual(
             normalize_base_url(
                 "https://example.test/proxy/v1/messages/",
                 "anthropic",
@@ -412,7 +420,7 @@ class TestSDKAndCompletion(unittest.TestCase):
             self.assertIs(client._ensure_client(), sdk)
         sdk_type.assert_called_once_with(
             api_key="secret",
-            base_url="https://example.test/v1",
+            base_url="https://example.test",
             timeout=600,
             max_retries=0,
         )
