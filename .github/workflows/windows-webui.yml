@@ -41,15 +41,11 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - uses: msys2/setup-msys2@v2
-        id: msys
-        with:
-          msystem: UCRT64
-          update: true
-          install: mingw-w64-ucrt-x86_64-pango
       - name: Install locked Python and Web dependencies
         run: |
           uv sync --locked --all-packages --group dev --group desktop-build --extra desktop --extra pdf-output --extra pdf-output-lite --python 3.12
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          uv run --no-sync pytest -q apps/api/tests/test_desktop_packaging.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           pnpm install --frozen-lockfile
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -57,8 +53,12 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           pnpm -C apps/web exec playwright install chromium
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          uv run --no-sync pytest -q apps/api/tests/test_desktop_packaging.py
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: msys2/setup-msys2@v2
+        id: msys
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-pango
       - name: Build self-contained x64 ZIP
         env:
           MSYS2_LOCATION: ${{ steps.msys.outputs.msys2-location }}

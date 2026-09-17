@@ -17,10 +17,11 @@ def allow_current_user(directory: Path) -> None:
     import win32con
     import win32security
 
-    with win32security.OpenProcessToken(
-        win32api.GetCurrentProcess(), win32con.TOKEN_QUERY
-    ) as token:
+    token = win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32con.TOKEN_QUERY)
+    try:
         user = win32security.GetTokenInformation(token, win32security.TokenUser)[0]
+    finally:
+        token.Close()
     descriptor = win32security.GetNamedSecurityInfo(
         str(directory), win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION
     )
@@ -28,11 +29,11 @@ def allow_current_user(directory: Path) -> None:
     if acl is None:
         return
     for index in range(acl.GetAceCount()):
-        (kind, _), mask, sid = acl.GetAce(index)
+        entry = acl.GetAce(index)
         if (
-            kind == win32security.ACCESS_ALLOWED_ACE_TYPE
-            and sid == user
-            and mask & win32con.FILE_ALL_ACCESS == win32con.FILE_ALL_ACCESS
+            entry[0][0] == win32security.ACCESS_ALLOWED_ACE_TYPE
+            and entry[-1] == user
+            and entry[1] & win32con.FILE_ALL_ACCESS == win32con.FILE_ALL_ACCESS
         ):
             return
     acl.AddAccessAllowedAceEx(
