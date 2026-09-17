@@ -43,7 +43,10 @@ def test_desktop_host_auth_spa_and_websocket(native_env, tmp_path, monkeypatch):
     )
     assert client.get("/transfers").text == "<html>Wenyi SPA</html>"
     assert client.get(f"/projects/{pid}").status_code == 200
-    assert client.get("/app.js").headers["content-type"].startswith("text/javascript")
+    assert client.get("/app.js").headers["content-type"].split(";")[0] in {
+        "text/javascript",
+        "application/javascript",
+    }
     assert client.get("/assets/missing.js").status_code == 404
     assert client.get("/", headers={"Host": "untrusted.example"}).status_code == 400
     with client.websocket_connect(f"/ws/projects/{pid}/progress") as socket:

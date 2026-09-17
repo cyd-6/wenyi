@@ -4,6 +4,19 @@ on:
   workflow_dispatch:
   push:
     branches: [codex/windows-webui]
+    paths:
+      - '.github/workflows/windows-webui.yml'
+      - 'apps/**'
+      - 'packages/**'
+      - 'scripts/*windows*'
+      - 'scripts/*transfer*'
+      - 'scripts/desktop_entry.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'config.yaml'
+      - 'pnpm-lock.yaml'
+      - 'docs/*windows*'
+      - 'docs/zh/windows.md'
   pull_request:
     paths:
       - '.github/workflows/windows-webui.yml'
