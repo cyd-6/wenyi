@@ -13,6 +13,7 @@ def allow_current_user(directory: Path) -> None:
     """Let the restricted database token use a newly created private directory."""
     if os.name != "nt":
         return
+    import ntsecuritycon
     import win32api
     import win32con
     import win32security
@@ -33,13 +34,13 @@ def allow_current_user(directory: Path) -> None:
         if (
             entry[0][0] == win32security.ACCESS_ALLOWED_ACE_TYPE
             and entry[-1] == user
-            and entry[1] & win32con.FILE_ALL_ACCESS == win32con.FILE_ALL_ACCESS
+            and entry[1] & ntsecuritycon.FILE_ALL_ACCESS == ntsecuritycon.FILE_ALL_ACCESS
         ):
             return
     acl.AddAccessAllowedAceEx(
         win32security.ACL_REVISION,
         win32con.OBJECT_INHERIT_ACE | win32con.CONTAINER_INHERIT_ACE,
-        win32con.FILE_ALL_ACCESS,
+        ntsecuritycon.FILE_ALL_ACCESS,
         user,
     )
     win32security.SetNamedSecurityInfo(
