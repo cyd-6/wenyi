@@ -409,6 +409,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=__import__("wenyi_api").__version__)
     args = parser.parse_args(argv)
     if args.child:
+        # WeasyPrint skips its own DLL-directory setup in frozen applications.
+        # Keep the returned handles alive for the lifetime of this child.
+        dll_handles = []
+        if os.name == "nt":
+            for directory in os.environ.get("WEASYPRINT_DLL_DIRECTORIES", "").split(os.pathsep):
+                if directory:
+                    dll_handles.append(os.add_dll_directory(directory))
         if args.child == "api":
             from .server import serve
 
