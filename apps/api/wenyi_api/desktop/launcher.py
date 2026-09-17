@@ -18,7 +18,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from .platform import InstanceLock, ProcessOwner
+from .platform import InstanceLock, ProcessOwner, allow_current_user
 
 log = logging.getLogger(__name__)
 
@@ -148,6 +148,7 @@ class Supervisor:
         )
         temporary = self.control / "tmp"
         temporary.mkdir(exist_ok=True)
+        allow_current_user(temporary)
         self.env.update(TEMP=str(temporary), TMP=str(temporary), TMPDIR=str(temporary))
         default_config = self.config / "config.yaml"
         if not default_config.exists():
@@ -203,6 +204,7 @@ class Supervisor:
                     "The database directory is incomplete. Preserve data/ and inspect data/logs/postgres.log before restoring a backup."
                 )
             bootstrap = Path(tempfile.mkdtemp(prefix=".postgres-init-", dir=self.data))
+            allow_current_user(bootstrap)
             self._run(
                 [
                     self._binary("initdb"),

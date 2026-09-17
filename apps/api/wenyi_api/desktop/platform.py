@@ -9,6 +9,49 @@ import subprocess
 from pathlib import Path
 
 
+def allow_current_user(directory: Path) -> None:
+    """Let the restricted database token use a newly created private directory."""
+    if os.name != "nt":
+        return
+    import win32api
+    import win32con
+    import win32security
+
+    with win32security.OpenProcessToken(
+        win32api.GetCurrentProcess(), win32con.TOKEN_QUERY
+    ) as token:
+        user = win32security.GetTokenInformation(token, win32security.TokenUser)[0]
+    descriptor = win32security.GetNamedSecurityInfo(
+        str(directory), win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION
+    )
+    acl = descriptor.GetSecurityDescriptorDacl()
+    if acl is None:
+        return
+    for index in range(acl.GetAceCount()):
+        (kind, _), mask, sid = acl.GetAce(index)
+        if (
+            kind == win32security.ACCESS_ALLOWED_ACE_TYPE
+            and sid == user
+            and mask & win32con.FILE_ALL_ACCESS == win32con.FILE_ALL_ACCESS
+        ):
+            return
+    acl.AddAccessAllowedAceEx(
+        win32security.ACL_REVISION,
+        win32con.OBJECT_INHERIT_ACE | win32con.CONTAINER_INHERIT_ACE,
+        win32con.FILE_ALL_ACCESS,
+        user,
+    )
+    win32security.SetNamedSecurityInfo(
+        str(directory),
+        win32security.SE_FILE_OBJECT,
+        win32security.DACL_SECURITY_INFORMATION,
+        None,
+        None,
+        acl,
+        None,
+    )
+
+
 class InstanceLock:
     def __init__(self, root: Path):
         self.root = root
@@ -186,7 +229,19 @@ class ProcessOwner:
                         win32security.WinBuiltinPowerUsersSid,
                     )
                 ]
-                restricted = win32security.CreateRestrictedToken(token, 0, disabled, [], [])
+                restricted = win32security.CreateRestrictedToken(token, 1, disabled, [], [])
+                user = win32security.GetTokenInformation(token, win32security.TokenUser)[0]
+                acl = win32security.GetTokenInformation(restricted, win32security.TokenDefaultDacl)
+                if acl is not None:
+                    acl.AddAccessAllowedAceEx(
+                        win32security.ACL_REVISION,
+                        win32con.OBJECT_INHERIT_ACE,
+                        win32con.GENERIC_ALL,
+                        user,
+                    )
+                    win32security.SetTokenInformation(
+                        restricted, win32security.TokenDefaultDacl, acl
+                    )
                 handles = win32process.CreateProcessAsUser(restricted, *parameters)
             else:
                 handles = win32process.CreateProcess(*parameters)

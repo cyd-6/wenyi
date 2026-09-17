@@ -57,6 +57,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           pnpm -C apps/web exec playwright install chromium
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          uv run --no-sync pytest -q apps/api/tests/test_desktop_packaging.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Build self-contained x64 ZIP
         env:
           MSYS2_LOCATION: ${{ steps.msys.outputs.msys2-location }}

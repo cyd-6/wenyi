@@ -315,6 +315,13 @@ def smoke(args):
             f"PASS: {environment}, loopback auth, duplicate launch, port collision, upload, mock translation, revision, exports, restart and moved data. Evidence: {directory}",
             flush=True,
         )
+    except Exception:
+        for path in sorted((app.root / "data/logs").glob("*.log")):
+            print(
+                f"\n{path.name}:\n{path.read_text(encoding='utf-8', errors='replace')[-4000:]}",
+                file=sys.stderr,
+            )
+        raise
     finally:
         app.stop()
         model.shutdown()

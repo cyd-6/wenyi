@@ -36,13 +36,20 @@ def test_utf8_manifest_preserves_vendor_execution_and_dependencies(monkeypatch):
 
 
 def test_owned_process_redirects_output_and_reports_exit(tmp_path):
-    from wenyi_api.desktop.platform import ProcessOwner
+    from wenyi_api.desktop.platform import ProcessOwner, allow_current_user
 
     owner = ProcessOwner()
+    allow_current_user(tmp_path)
     try:
         with (tmp_path / "process.log").open("wb") as output:
             child = owner.spawn(
-                [sys.executable, "-c", "print('owned child')"],
+                [
+                    sys.executable,
+                    "-c",
+                    "import subprocess,sys; from pathlib import Path; "
+                    "Path('child.txt').write_text('saved'); "
+                    "print(subprocess.check_output([sys.executable,'-c',\"print('owned child')\"],text=True).strip())",
+                ],
                 output=output,
                 env=os.environ.copy(),
                 cwd=tmp_path,
@@ -51,5 +58,6 @@ def test_owned_process_redirects_output_and_reports_exit(tmp_path):
             assert child.wait(timeout=10) == 0
             assert child.poll() == 0
         assert (tmp_path / "process.log").read_text().strip() == "owned child"
+        assert (tmp_path / "child.txt").read_text() == "saved"
     finally:
         owner.close()
