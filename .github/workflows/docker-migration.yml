@@ -1,0 +1,34 @@
+name: Official Docker migration compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/windows-webui]
+    paths:
+      - '.github/workflows/docker-migration.yml'
+      - 'scripts/check_docker_migration.py'
+      - 'scripts/*transfer*'
+      - 'apps/api/wenyi_api/transfer/**'
+  pull_request:
+    paths:
+      - '.github/workflows/docker-migration.yml'
+      - 'scripts/check_docker_migration.py'
+      - 'scripts/*transfer*'
+      - 'apps/api/wenyi_api/transfer/**'
+
+permissions:
+  contents: read
+
+jobs:
+  docker-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test real official Compose with Bash and PowerShell wrappers
+        run: python scripts/check_docker_migration.py --work-dir "${{ runner.temp }}/wenyi-docker-source"
