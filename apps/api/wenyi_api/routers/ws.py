@@ -39,6 +39,29 @@ async def project_progress(ws: WebSocket, pid: str) -> None:
     except Exception:  # noqa: BLE001
         pass
 
+    if settings.runtime_backend == "postgres":
+        from ..runtime.progress import subscribe
+
+        async def forward():
+            async for message in subscribe(pid):
+                await ws.send_text(message)
+
+        forwarding = asyncio.create_task(forward())
+        disconnected = asyncio.create_task(ws.receive())
+        try:
+            done, _ = await asyncio.wait(
+                [forwarding, disconnected], return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                task.result()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            forwarding.cancel()
+            disconnected.cancel()
+            await asyncio.gather(forwarding, disconnected, return_exceptions=True)
+        return
+
     redis = Redis.from_url(settings.redis_url)
     pubsub = redis.pubsub()
     await pubsub.subscribe(f"project:{pid}")

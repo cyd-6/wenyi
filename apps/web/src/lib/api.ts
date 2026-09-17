@@ -18,6 +18,25 @@ export function setAuthToken(token: string | null) {
   }
 }
 
+// The desktop launcher sends a session token in the fragment, never in HTTP URLs.
+if (typeof window !== "undefined") {
+  const bootstrap = new URLSearchParams(window.location.hash.slice(1)).get(
+    "wenyi-token",
+  );
+  if (bootstrap) {
+    setAuthToken(bootstrap);
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + window.location.search,
+    );
+  }
+}
+
+export function getAuthToken() {
+  return authToken || "";
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
@@ -97,6 +116,8 @@ export type Capabilities = Output<"Capabilities">;
 export type GlobalConfig = Output<"GlobalConfigOut">;
 export type GlobalConfigInput = components["schemas"]["GlobalConfigInput"];
 export type ProjectConfig = Output<"ProjectConfigOut">;
+export type TransferPreview = Output<"TransferPreview">;
+export type TransferResult = Output<"TransferResult">;
 export type ReviewRun = Output<"ReviewRun">;
 export type ReviewItem = components["schemas"]["ReviewItem"];
 export type ReviewLocation = components["schemas"]["ReviewLocation"];
@@ -114,6 +135,27 @@ export interface ReportData {
 
 // API calls.
 export const api = {
+  previewTransfer: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<TransferPreview>("/transfers/preview", {
+      method: "POST",
+      body,
+    });
+  },
+  getTransfer: (id: string) =>
+    request<TransferPreview>(`/transfers/${encodeURIComponent(id)}`),
+  importTransfer: (
+    id: string,
+    project_ids: string[],
+    registry_revision: number,
+  ) =>
+    request<TransferResult[]>(`/transfers/${encodeURIComponent(id)}/import`, {
+      method: "POST",
+      body: JSON.stringify({ project_ids, registry_revision }),
+    }),
+  transferResults: (id: string) =>
+    request<TransferResult[]>(`/transfers/${encodeURIComponent(id)}/results`),
   getGlobalDefaults: () => request<GlobalConfig>("/settings/defaults"),
   getProjectDefaults: (pid: string) =>
     request<ProjectConfig>(`/projects/${pid}/config/defaults`),

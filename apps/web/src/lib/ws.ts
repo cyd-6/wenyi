@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getAuthToken } from "./api";
 
 export interface ProgressMessage {
   run_id?: string;
@@ -34,9 +35,7 @@ export function useProjectProgress(pid: string | undefined) {
       );
       wsRef.current = ws;
       ws.onopen = () => {
-        ws.send(
-          JSON.stringify({ token: localStorage.getItem("wenyi_token") || "" }),
-        );
+        ws.send(JSON.stringify({ token: getAuthToken() }));
         setConnected(true);
         backoff = 500;
       };

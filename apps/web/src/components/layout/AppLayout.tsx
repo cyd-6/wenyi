@@ -1,6 +1,6 @@
 import { useI18n } from "@/i18n";
 import { Link, Outlet, useNavigate, useParams } from "react-router-dom";
-import { FolderPlus, LayoutDashboard, Settings2 } from "lucide-react";
+import { FolderPlus, LayoutDashboard, Settings2, FolderInput } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavigationLink, ProjectNavigation } from "./Navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -86,6 +86,7 @@ export function AppLayout() {
             icon={Settings2}
             label="settings.title"
           />
+          <NavigationLink to="/transfers" icon={FolderInput} label="transfer.title" />
         </nav>
       </aside>
       <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">

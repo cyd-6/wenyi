@@ -1,5 +1,29 @@
 /** Canonical interface messages. Keys are shared by every locale. */
 const en = {
+  "transfer.title": "Import Docker projects",
+  "transfer.description":
+    "Bring selected projects and saved translation progress into this workspace.",
+  "transfer.archive": "Transfer archive",
+  "transfer.instructions":
+    "On the Docker host, pause the projects you want to move and use the supplied migration tool to export a .wenyi.zip archive. Upload that archive here to inspect and select projects.",
+  "transfer.chooseFile": "Choose .wenyi.zip archive",
+  "transfer.working":
+    "Validating or importing files. Large archives can take a few minutes…",
+  "transfer.selectProjects": "Select projects to import",
+  "transfer.sourceVersion": "Source version: {version}",
+  "transfer.imported": "Already imported",
+  "transfer.counts":
+    "{segments} paragraphs · {terms} glossary entries · {files} files",
+  "transfer.nameConflict":
+    "A project with this name exists. The imported copy will receive an import suffix.",
+  "transfer.credentials":
+    "Configure these API credential variables before continuing translation:",
+  "transfer.preserve":
+    "Existing projects are kept. Imported projects are added as copies; unfinished work stays paused until you resume it. API keys are not included in archives.",
+  "transfer.importSelected": "Import {count} selected projects",
+  "transfer.refresh": "Refresh preview",
+  "transfer.results": "Import results",
+  "transfer.openProject": "Open imported project",
   "appLayout.wenyi": "Wenyi",
   "appLayout.projects": "Projects",
   "common.createProject": "Create project",

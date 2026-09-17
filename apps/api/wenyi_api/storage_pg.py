@@ -13,6 +13,7 @@ import re
 import threading
 import time
 from contextlib import contextmanager
+from copy import deepcopy
 from typing import Any, Iterator, Literal
 
 from psycopg import sql
@@ -22,6 +23,7 @@ from wenyi_core.glossary.store import GlossaryStore, GlossaryTerm
 from wenyi_core.ingest.models import Chapter, Document, Segment
 from wenyi_core.pipeline.runstore import ExportSnapshotStore, source_sha256
 
+from .paths import portable_references, resolve_source, store_source
 from .segment_history import load_history, record_chapter_changes
 
 
@@ -216,7 +218,7 @@ class PostgresStorage:
             conn.execute(
                 "UPDATE projects SET source_path=%s, source_sha256=%s, annotation_contexts=%s WHERE id=%s",
                 (
-                    doc.source_path,
+                    store_source(doc.source_path, root=os.path.dirname(self.run_dir)),
                     digest,
                     Jsonb(annotations) if annotations else None,
                     self.project_id,
@@ -277,6 +279,10 @@ class PostgresStorage:
             )
         )
         manifest["meta"] = manifest.get("meta") or {}
+        if manifest.get("source_path") and self._run_dir:
+            manifest["source_path"] = resolve_source(
+                manifest["source_path"], root=os.path.dirname(self.run_dir)
+            )
         manifest["chapters"] = []
         for ch in chapters:
             entry = dict(ch[6] or {})
@@ -287,6 +293,11 @@ class PostgresStorage:
         return manifest
 
     def save_manifest(self, manifest: dict) -> None:
+        manifest = deepcopy(manifest)
+        if manifest.get("source_path") and self._run_dir:
+            manifest["source_path"] = store_source(
+                manifest["source_path"], root=os.path.dirname(self.run_dir)
+            )
         with self.state_lock(), self._conn as conn:
             conn.execute(
                 """UPDATE projects SET manifest=%s,title=%s,fmt=%s,
@@ -535,10 +546,31 @@ class PostgresStorage:
             row = conn.execute(
                 "SELECT value FROM artifacts WHERE project_id=%s AND key=%s", (self.project_id, key)
             ).fetchone()
-        return row[0] if row else None
+        value = row[0] if row else None
+        if (
+            key == "srt/manifest.json"
+            and isinstance(value, dict)
+            and value.get("source_path")
+            and self._run_dir
+        ):
+            value["source_path"] = resolve_source(
+                value["source_path"], root=os.path.dirname(self.run_dir)
+            )
+        return value
 
     def write_artifact(self, key: str, value: Any) -> None:
         key = self._artifact_key(key)
+        if (
+            key in {"parsed_document.json", "srt/manifest.json"}
+            and isinstance(value, dict)
+            and self._run_dir
+        ):
+            value = deepcopy(value)
+            document = value if key == "srt/manifest.json" else value.get("document") or {}
+            if document.get("source_path"):
+                document["source_path"] = store_source(
+                    document["source_path"], root=os.path.dirname(self.run_dir)
+                )
         if key == "usage.json":
             self.save_usage(value)
             return
@@ -665,6 +697,9 @@ class PostgresStorage:
         }
 
     def log_event(self, event: str, **data: Any) -> None:
+        data = portable_references(
+            data, root=os.path.dirname(self.run_dir) if self._run_dir else None
+        )
         with self._conn as conn:
             conn.execute(
                 "INSERT INTO events(project_id,type,payload) VALUES(%s,%s,%s)",

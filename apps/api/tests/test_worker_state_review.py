@@ -34,7 +34,9 @@ def worker_state(pg_storage, pg_pool, monkeypatch):
     monkeypatch.setattr(
         tasks,
         "settings",
-        SimpleNamespace(psycopg_dsn="unused", redis_url="redis://127.0.0.1:56379/0"),
+        SimpleNamespace(
+            psycopg_dsn="unused", redis_url="redis://127.0.0.1:56379/0", runtime_backend="redis"
+        ),
     )
     return pg_storage
 

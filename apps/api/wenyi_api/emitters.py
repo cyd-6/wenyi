@@ -20,6 +20,11 @@ class RedisEmitter:
         self.channel = f"project:{project_id}"
         self._started = time.monotonic()
 
+    def publish(self, payload: dict) -> None:
+        encoded = json.dumps(payload, ensure_ascii=False)
+        self._redis.set(f"{self.channel}:progress", encoded, ex=604800)
+        self._redis.publish(self.channel, encoded)
+
     def emit(self, event: TranslationEvent) -> None:
         payload = {
             "run_id": self.run_id,
@@ -33,12 +38,22 @@ class RedisEmitter:
             "elapsed_seconds": max(0.0, time.monotonic() - self._started),
         }
         try:
-            encoded = json.dumps(payload, ensure_ascii=False)
-            self._redis.set(f"{self.channel}:progress", encoded, ex=604800)
-            self._redis.publish(self.channel, encoded)
+            self.publish(payload)
         except Exception:
             # Redis failures must not interrupt translation; persisted events remain available.
             return None
+
+
+class PostgresEmitter(RedisEmitter):
+    def __init__(self, project_id: str, run_id: str | None = None):
+        self.run_id = run_id
+        self._project_id = project_id
+        self._started = time.monotonic()
+
+    def publish(self, payload: dict) -> None:
+        from .runtime.progress import publish
+
+        publish(payload)
 
 
 def redis_progress_fn(

@@ -14,10 +14,15 @@ _REMOTE_ACTIVE = {JobStatus.queued, JobStatus.deferred, JobStatus.in_progress}
 async def recover_jobs(ctx: dict) -> None:
     # The grace period avoids the normal interval between SQL creation and enqueue.
     with get_pool().connection() as conn:
+        age_filter = (
+            ""
+            if ctx.get("recover_immediately")
+            else "AND updated_at < now() - interval '2 minutes'"
+        )
         rows = conn.execute(
-            """SELECT id,project_id,arq_job_id,kind,params FROM jobs
+            f"""SELECT id,project_id,arq_job_id,kind,params FROM jobs
             WHERE status IN ('queued','running')
-            AND updated_at < now() - interval '2 minutes' ORDER BY id"""
+            {age_filter} ORDER BY id"""
         ).fetchall()
     for job_id, pid, arq_id, kind, params in rows:
         storage = storage_for(pid)
@@ -49,8 +54,14 @@ async def recover_jobs(ctx: dict) -> None:
                     continue
                 if current["status"] == "queued":
                     queue = "wenyi:exports" if is_export else "wenyi:workflows"
-                    remote = await Job(arq_id, ctx["redis"], _queue_name=queue).status()
-                    if remote in _REMOTE_ACTIVE:
+                    if ctx.get("backend") == "postgres":
+                        from ..runtime.queue import is_active
+
+                        active = is_active(arq_id)
+                    else:
+                        remote = await Job(arq_id, ctx["redis"], _queue_name=queue).status()
+                        active = remote in _REMOTE_ACTIVE
+                    if active:
                         continue
                 if is_export:
                     message = (

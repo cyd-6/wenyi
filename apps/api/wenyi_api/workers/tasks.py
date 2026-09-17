@@ -181,7 +181,7 @@ def _execute(
 
     pool = init_pool(settings.psycopg_dsn)
     storage = _pipeline_storage(pid, pool)
-    redis = redis_lib.from_url(settings.redis_url)
+    redis = redis_lib.from_url(settings.redis_url) if settings.runtime_backend == "redis" else None
     job = dal.get_job_by_arq_id(run_id) if run_id else None
     client = None
     stop = stop or threading.Event()
@@ -200,7 +200,14 @@ def _execute(
 
     watcher = threading.Thread(target=monitor_pause, daemon=True)
     watcher.start()
-    emitter = redis_progress_fn(redis, pid, kind=kind, run_id=run_id)
+    if redis is not None:
+        emitter = redis_progress_fn(redis, pid, kind=kind, run_id=run_id)
+    else:
+        from wenyi_core.events import make_progress_fn
+
+        from ..emitters import PostgresEmitter
+
+        emitter = make_progress_fn(PostgresEmitter(pid, run_id), pid, kind=kind)
 
     def progress(done, total, label):
         if stop.is_set() or (dal.get_project(pid) or {}).get("status") in {"pausing", "paused"}:
@@ -294,7 +301,8 @@ def _execute(
     finally:
         finished.set()
         watcher.join(timeout=1)
-        redis.close()
+        if redis is not None:
+            redis.close()
         storage.close()
 
 
@@ -360,9 +368,9 @@ def _render_export_sync(
     project = dal.get_project(pid)
     if project is None:
         raise ValueError(f"Project not found: {pid}")
-    original = Path(
-        (project.get("source_meta") or {}).get("original_filename") or "translation"
-    ).stem
+    original = paths.safe_filename(
+        Path((project.get("source_meta") or {}).get("original_filename") or "translation").stem
+    )
     out_dir = Path(paths.exports_dir(pid)) / str(export_id)
     out_dir.mkdir(parents=True, exist_ok=True)
     suffix = "md" if fmt == "markdown" else fmt

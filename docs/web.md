@@ -66,6 +66,7 @@ API, workflow worker, and export worker all load `deploy/.env`, mount the same r
 | `WENYI_CONFIG` | Core config path. Containers use `/app/config.yaml`; local default is `config.yaml`. |
 | `WENYI_CONFIG_FILE` | Host config file for Compose; default `../config.yaml` relative to `deploy/`. |
 | `DATA_DIR` | Uploaded originals, parser caches, and export artifacts. Containers use `/data`. |
+| `WENYI_RUNTIME_BACKEND` | `redis` (default, Docker/Arq) or `postgres` (portable Windows durable queue). See [Windows](windows.md). |
 | `DATABASE_URL` / `REDIS_URL` | Local development URLs; Compose overrides them to internal service addresses. |
 | `INSTALL_PDF_OUTPUT` | Docker build arg, default `true`, installs WeasyPrint and fpdf2. Set `false` to skip Python PDF output dependencies. |
 | `WENYI_VERSION` | Package version supplied during Docker builds; default `0.0.0+docker`. Set the release version explicitly for release images. |

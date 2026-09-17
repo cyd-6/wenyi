@@ -17,6 +17,13 @@ dependencies = [
 [tool.uv.sources]
 wenyi-core = { workspace = true }
 
+[project.optional-dependencies]
+desktop = [
+    "pystray>=0.19.5",
+    "pillow>=11.0",
+    "python-dotenv>=1.0",
+]
+
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"

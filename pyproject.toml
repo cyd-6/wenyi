@@ -39,6 +39,7 @@ bypass-selection = true
 only-include = ["pyproject.toml"]
 
 [dependency-groups]
+desktop-build = ["pyinstaller>=6.15"]
 dev = [
     "httpx2>=2.13", # Starlette's TestClient HTTP transport.
     "pre-commit>=3.7",

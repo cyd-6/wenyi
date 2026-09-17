@@ -1,6 +1,26 @@
 import type { Messages } from "../catalog";
 
 const zhCN = {
+  "transfer.title": "导入 Docker 项目",
+  "transfer.description":
+    "选择需要迁移的项目，将文件与翻译进度带到当前工作区。",
+  "transfer.archive": "迁移文件",
+  "transfer.instructions":
+    "在 Docker 所在电脑上暂停需要迁移的项目，使用随包迁移工具导出 .wenyi.zip 文件。在此上传后即可检查并选择项目。",
+  "transfer.chooseFile": "选择 .wenyi.zip 文件",
+  "transfer.working": "正在校验或导入文件，较大的迁移包可能需要几分钟……",
+  "transfer.selectProjects": "选择要导入的项目",
+  "transfer.sourceVersion": "来源版本：{version}",
+  "transfer.imported": "已导入",
+  "transfer.counts": "{segments} 个段落 · {terms} 条术语 · {files} 个文件",
+  "transfer.nameConflict": "已有同名项目，导入副本会自动添加后缀。",
+  "transfer.credentials": "继续翻译前，请配置以下 API 凭据变量：",
+  "transfer.preserve":
+    "已有项目会保留，导入项目作为副本添加。未完成的任务保持暂停，点击恢复后再继续。迁移文件不包含 API 密钥。",
+  "transfer.importSelected": "导入选中的 {count} 个项目",
+  "transfer.refresh": "刷新预览",
+  "transfer.results": "导入结果",
+  "transfer.openProject": "打开导入项目",
   "appLayout.wenyi": "文译",
   "appLayout.projects": "项目列表",
   "common.createProject": "创建项目",

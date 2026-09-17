@@ -183,12 +183,17 @@ def workflow(pid: str) -> dict:
     progress = None
     if job:
         try:
-            with Redis.from_url(
-                settings.redis_url, socket_timeout=1, socket_connect_timeout=1
-            ) as redis:
-                raw = redis.get(f"project:{pid}:progress")
-            payload = raw.decode() if isinstance(raw, (bytes, bytearray)) else raw
-            candidate = json.loads(payload) if isinstance(payload, str) else None
+            if settings.runtime_backend == "postgres":
+                from ..runtime.progress import latest
+
+                candidate = latest(pid)
+            else:
+                with Redis.from_url(
+                    settings.redis_url, socket_timeout=1, socket_connect_timeout=1
+                ) as redis:
+                    raw = redis.get(f"project:{pid}:progress")
+                payload = raw.decode() if isinstance(raw, (bytes, bytearray)) else raw
+                candidate = json.loads(payload) if isinstance(payload, str) else None
             if (
                 isinstance(candidate, dict)
                 and candidate.get("run_id") == job.get("run_id")

@@ -170,3 +170,38 @@ CREATE TABLE IF NOT EXISTS strategy_templates (
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX IF NOT EXISTS idx_glossary_source_trgm ON glossary USING gin (source gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_glossary_target_trgm ON glossary USING gin (target gin_trgm_ops);
+
+-- Optional native runtime: durable dispatch, bounded progress and worker readiness.
+CREATE TABLE IF NOT EXISTS runtime_queue (
+    id TEXT PRIMARY KEY,
+    queue TEXT NOT NULL,
+    function TEXT NOT NULL,
+    kwargs JSONB NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_runtime_queue_pending
+    ON runtime_queue(queue, created_at) WHERE status='queued';
+CREATE TABLE IF NOT EXISTS runtime_progress (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    payload JSONB NOT NULL,
+    revision BIGINT NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS runtime_workers (
+    queue TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL,
+    heartbeat TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS transfer_imports (
+    package_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    project_id TEXT NOT NULL UNIQUE,
+    package_sha256 TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'staging',
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY(package_id, source_id)
+);

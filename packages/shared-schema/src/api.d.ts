@@ -454,6 +454,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/transfers/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload */
+        post: operations["upload_transfers_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transfers/{upload_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect Upload */
+        get: operations["inspect_upload_transfers__upload_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transfers/{upload_id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Upload */
+        post: operations["import_upload_transfers__upload_id__import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transfers/{upload_id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Import Results */
+        get: operations["import_results_transfers__upload_id__results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{pid}/chapters": {
         parameters: {
             query?: never;
@@ -859,6 +927,11 @@ export interface components {
             file: string;
             /** Fmt */
             fmt?: string | null;
+        };
+        /** Body_upload_transfers_preview_post */
+        Body_upload_transfers_preview_post: {
+            /** File */
+            file: string;
         };
         /** Capabilities */
         Capabilities: {
@@ -1597,6 +1670,75 @@ export interface components {
              * @default ok
              */
             status: string;
+        };
+        /** TransferConflict */
+        TransferConflict: {
+            /** Kind */
+            kind: string;
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+        };
+        /** TransferImportRequest */
+        TransferImportRequest: {
+            /** Project Ids */
+            project_ids: string[];
+            /** Registry Revision */
+            registry_revision: number;
+        };
+        /** TransferPreview */
+        TransferPreview: {
+            /** Upload Id */
+            upload_id: string;
+            /** Package Id */
+            package_id: string;
+            /** Source Version */
+            source_version: string;
+            /** Registry Revision */
+            registry_revision: number;
+            /** Projects */
+            projects: components["schemas"]["TransferProject"][];
+        };
+        /** TransferProject */
+        TransferProject: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Format */
+            format: string | null;
+            /** Status */
+            status: string;
+            /** Name Conflict */
+            name_conflict: boolean;
+            /** Already Imported */
+            already_imported: boolean;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** File Count */
+            file_count: number;
+            /** Bytes */
+            bytes: number;
+            /** Conflicts */
+            conflicts: components["schemas"]["TransferConflict"][];
+            /** Missing Credentials */
+            missing_credentials: string[];
+            /** Warnings */
+            warnings: string[];
+        };
+        /** TransferResult */
+        TransferResult: {
+            /** Source Id */
+            source_id: string;
+            /** Project Id */
+            project_id: string;
+            /** Status */
+            status: string;
+            /** Error */
+            error?: string | null;
         };
         /** UploadPreview */
         UploadPreview: {
@@ -2578,6 +2720,136 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_transfers_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_transfers_preview_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_upload_transfers__upload_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_upload_transfers__upload_id__import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferResult"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_results_transfers__upload_id__results_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferResult"][];
                 };
             };
             /** @description Validation Error */

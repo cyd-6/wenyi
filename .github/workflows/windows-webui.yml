@@ -1,0 +1,106 @@
+name: Windows portable WebUI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/windows-webui]
+  pull_request:
+    paths:
+      - '.github/workflows/windows-webui.yml'
+      - 'apps/**'
+      - 'packages/core/**'
+      - 'scripts/*windows*'
+      - 'scripts/*transfer*'
+      - 'uv.lock'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: msys2/setup-msys2@v2
+        id: msys
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-pango
+      - name: Install locked Python and Web dependencies
+        run: |
+          uv sync --locked --all-packages --group dev --group desktop-build --extra desktop --extra pdf-output --extra pdf-output-lite --python 3.12
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          pnpm -C apps/web build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          pnpm -C apps/web exec playwright install chromium
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build self-contained x64 ZIP
+        env:
+          MSYS2_LOCATION: ${{ steps.msys.outputs.msys2-location }}
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products '*' -property installationPath
+          $crt = Get-ChildItem "$installation\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT" -Directory | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $crt) { throw 'Visual C++ x64 redistributable directory was not found.' }
+          uv run --no-sync python scripts/build_windows_webui.py --msys-root "$env:MSYS2_LOCATION" --crt-dir "$($crt.FullName)"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Test the extracted application and real browser
+        run: |
+          uv run --no-sync python scripts/smoke_windows_webui.py --browser --work-dir "${{ runner.temp }}/wenyi-acceptance"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: PostgreSQL queue and migration fault tests on Windows
+        run: |
+          $pg = "${{ runner.temp }}/wenyi-acceptance/搬动后的 folder/runtime/postgres/bin"
+          $cluster = "${{ runner.temp }}/wenyi-test-db"
+          & "$pg/initdb.exe" -D $cluster -U wenyi --encoding=UTF8 --locale=C --auth=trust
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$pg/pg_ctl.exe" -D $cluster -l "${{ runner.temp }}/test-db.log" -o '-h 127.0.0.1 -p 55439' -w start
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          try {
+            $env:WENYI_TEST_DATABASE_URL = 'postgresql://wenyi@127.0.0.1:55439/postgres'
+            uv run --no-sync pytest -q apps/api/tests/test_native_runtime.py apps/api/tests/test_project_transfers.py apps/api/tests/test_desktop_server.py
+            $testExit = $LASTEXITCODE
+          } finally { & "$pg/pg_ctl.exe" -D $cluster -m fast -w stop }
+          exit $testExit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-webui-validation
+          path: |
+            ${{ runner.temp }}/wenyi-acceptance/**/logs/*.log
+            ${{ runner.temp }}/wenyi-acceptance/*.png
+            ${{ runner.temp }}/wenyi-acceptance/*.pdf
+            ${{ runner.temp }}/wenyi-acceptance/browser-result.json
+            build/windows-webui-*/pyinstaller/Wenyi/warn-Wenyi.txt
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wenyi-webui-windows-x64
+          path: |
+            dist/wenyi-webui-windows-x64.zip
+            dist/wenyi-webui-windows-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14

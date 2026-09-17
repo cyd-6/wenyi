@@ -80,6 +80,7 @@
 ## 界面预览
 
 在 Web 工作台查看翻译进度、用量与耗时，并对照原文逐段校阅。详见[部署说明](web.md)。
+- [Windows 免安装 WebUI](windows.md) — 自带运行环境、选择 Docker 项目迁移
 
 <p align="center">
   <img src="../images/web-translation-overview.png" alt="翻译总览：查看步骤用量、缓存命中率和运行耗时。" width="960">

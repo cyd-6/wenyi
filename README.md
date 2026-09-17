@@ -80,6 +80,7 @@ Wenyi is designed for **long-form texts** — novels, social-science monographs,
 ## Interface preview
 
 Track translation progress, usage, and elapsed time, then proofread paragraphs alongside the source. See the [deployment guide](docs/web.md). Screenshots show the Chinese interface; English is available in Settings.
+- [Portable Windows WebUI](docs/windows.md) — self-contained runtime and selected Docker project migration
 
 <p align="center">
   <img src="docs/images/web-translation-overview.png" alt="Translation overview: usage by step, cache hit rates, and run durations." width="960">

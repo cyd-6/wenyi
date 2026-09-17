@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +29,7 @@ from .routers import (
     strategies,
     style,
     subtitles,
+    transfers,
     ws,
 )
 from .routers import (
@@ -39,8 +41,14 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         init_pool(settings.psycopg_dsn)
-        yield
-        close_pool()
+        from .db import get_pool
+        from .transfer.importer import recover_imports
+
+        try:
+            recover_imports(get_pool(), Path(settings.data_dir))
+            yield
+        finally:
+            close_pool()
 
     app = FastAPI(
         lifespan=lifespan,
@@ -59,8 +67,8 @@ def create_app() -> FastAPI:
 
         class _TokenMiddleware(BaseHTTPMiddleware):
             async def dispatch(self, request: Request, call_next):
-                path = request.url.path
-                if path.startswith("/health") or path.startswith("/ws/"):
+                path = request.url.path.removeprefix(request.scope.get("root_path", ""))
+                if path == "/health" or path.startswith("/ws/"):
                     return await call_next(request)
                 auth = request.headers.get("authorization", "")
                 provided = auth.removeprefix("Bearer ").strip()
@@ -86,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(global_settings.router)
     app.include_router(report.router)
     app.include_router(subtitles.router)
+    app.include_router(transfers.router)
     app.include_router(chapters.router)
     app.include_router(glossary.router)
     app.include_router(review.router)

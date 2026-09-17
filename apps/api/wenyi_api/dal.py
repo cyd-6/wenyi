@@ -40,7 +40,11 @@ def create_project(
     connection: Connection[Any] | None = None,
 ) -> str:
     pid = project_id or uuid.uuid4().hex[:16]
-    source = source or {}
+    source = dict(source or {})
+    if source.get("source_path"):
+        from .paths import store_source
+
+        source["source_path"] = store_source(source["source_path"])
     with _conn(connection) as c:
         c.execute(
             """INSERT INTO projects
@@ -160,6 +164,9 @@ def set_project_source(
     fmt: str | None = None,
     source_meta: dict[str, Any] | None = None,
 ) -> None:
+    from .paths import store_source
+
+    source_path = store_source(source_path)
     with _conn() as c:
         c.execute(
             """UPDATE projects SET source_path=%s, book_title=%s,
@@ -301,6 +308,9 @@ def create_job(
 def set_job_status(
     job_id: int, status: str, error: Optional[str] = None, *, result: dict[str, Any] | None = None
 ) -> None:
+    from .paths import portable_references
+
+    result = portable_references(result)
     with _conn() as c:
         c.execute(
             """UPDATE jobs SET status=%s, error=%s, result=COALESCE(%s,result),

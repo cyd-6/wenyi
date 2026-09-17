@@ -20,6 +20,10 @@ def _redis_settings() -> RedisSettings:
 
 
 async def enqueue(name: str, **kwargs):
+    if settings.runtime_backend == "postgres":
+        from ..runtime.queue import enqueue as enqueue_native
+
+        return await asyncio.to_thread(enqueue_native, name, **kwargs)
     pool = await create_pool(_redis_settings())
     try:
         return await pool.enqueue_job(

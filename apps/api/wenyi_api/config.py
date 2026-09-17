@@ -12,6 +12,7 @@ def _env(name: str, default: str) -> str:
 
 @dataclass(frozen=True)
 class Settings:
+    runtime_backend: str = _env("WENYI_RUNTIME_BACKEND", "redis")
     database_url: str = _env("DATABASE_URL", "postgresql://wenyi:wenyi@localhost:5432/wenyi")
     redis_url: str = _env("REDIS_URL", "redis://localhost:6379/0")
     data_dir: str = _env("DATA_DIR", "./data")
@@ -20,6 +21,10 @@ class Settings:
     # Core provider credentials come from environment variables such as DEEPSEEK_API_KEY.
     # Workers load defaults from config.yaml, then apply project overrides.
     config_path: str = _env("WENYI_CONFIG", "config.yaml")
+
+    def __post_init__(self) -> None:
+        if self.runtime_backend not in {"redis", "postgres"}:
+            raise ValueError("WENYI_RUNTIME_BACKEND must be redis or postgres")
 
     @property
     def psycopg_dsn(self) -> str:

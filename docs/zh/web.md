@@ -64,6 +64,7 @@ API、普通 Worker、导出 Worker 都加载 `deploy/.env`，只读挂载同一
 | `WENYI_CONFIG` | 应用读取的核心配置路径；容器固定 `/app/config.yaml`，本地默认 `config.yaml`。 |
 | `WENYI_CONFIG_FILE` | Compose 宿主配置文件，默认 `../config.yaml`，相对 `deploy/`。 |
 | `DATA_DIR` | 上传原件、解析资源与导出成品目录；容器固定 `/data`。 |
+| `WENYI_RUNTIME_BACKEND` | 默认 `redis`（Docker/Arq）；Windows 免安装版使用 `postgres` 持久化队列。参见 [Windows 说明](windows.md)。 |
 | `DATABASE_URL` / `REDIS_URL` | 本地开发连接地址；Compose 覆盖为内部服务地址。 |
 | `INSTALL_PDF_OUTPUT` | Docker 构建参数，默认 `true`，安装 WeasyPrint 和 fpdf2；`false` 省略 Python PDF 输出依赖。 |
 | `WENYI_VERSION` | Docker 构建时传入的包版本，默认 `0.0.0+docker`；发布镜像须显式设置发布版本。 |
