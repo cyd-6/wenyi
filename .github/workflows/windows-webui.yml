@@ -81,7 +81,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           try {
             $env:WENYI_TEST_DATABASE_URL = 'postgresql://wenyi@127.0.0.1:55439/postgres'
-            uv run --no-sync pytest -q apps/api/tests/test_native_runtime.py apps/api/tests/test_project_transfers.py apps/api/tests/test_desktop_server.py
+            uv run --no-sync pytest -q apps/api/tests/test_native_runtime.py apps/api/tests/test_project_transfers.py apps/api/tests/test_desktop_server.py apps/api/tests/test_desktop_packaging.py
             $testExit = $LASTEXITCODE
           } finally { & "$pg/pg_ctl.exe" -D $cluster -m fast -w stop }
           exit $testExit

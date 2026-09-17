@@ -2,7 +2,7 @@
 
 [中文](zh/windows.md)
 
-The Windows WebUI reuses the official React interface, FastAPI API and translation engine. It targets Windows 10/11 x64. The portable distribution is `wenyi-webui-windows-x64.zip`, built **on Windows** by the `Windows portable WebUI` workflow. A source checkout or a successful Linux test is not a validated Windows release. Before distributing a build, complete the Windows acceptance checks below.
+The Windows WebUI reuses the official React interface, FastAPI API and translation engine. It targets Windows 10 (1903 or later)/11 x64. The portable distribution is `wenyi-webui-windows-x64.zip`, built **on Windows** by the `Windows portable WebUI` workflow. A source checkout or a successful Linux test is not a validated Windows release. Before distributing a build, complete the Windows acceptance checks below.
 
 ## Start and configure
 

@@ -56,6 +56,8 @@ def launch_command(*args: str) -> list[str]:
 
 class Supervisor:
     def __init__(self, root: Path, *, port: int = 8080):
+        if os.name == "nt" and sys.getwindowsversion().build < 18362:
+            raise RuntimeError("Wenyi requires Windows 10 version 1903 or later, or Windows 11.")
         self.root = root.resolve()
         self.data = self.root / "data"
         self.control = self.data / "runtime"
@@ -116,17 +118,14 @@ class Supervisor:
         env["WENYI_CHILD_LOG"] = str(self.logs / f"{name}.log")
         if stop_file:
             env["WENYI_STOP_FILE"] = str(self.control / stop_file)
-        process = subprocess.Popen(
+        process = self.owner.spawn(
             args,
             cwd=self.root,
             env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=output,
-            stderr=subprocess.STDOUT,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            output=output,
+            restrict_admin=name == "postgres",
         )
         self.children.append(process)
-        self.owner.add(process)
         return process
 
     def initialize(self) -> None:

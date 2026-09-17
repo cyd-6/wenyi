@@ -2,7 +2,7 @@
 
 [English](../windows.md)
 
-Windows 版复用官方 React WebUI、FastAPI 与翻译内核，面向 Windows 10/11 x64。交付文件为 `wenyi-webui-windows-x64.zip`，由 **Windows 环境**中的 `Windows portable WebUI` 工作流生成。源码或 Linux 测试通过不代表 Windows 产物已经验收；发布前仍需完成本文末尾的 Windows 检查。
+Windows 版复用官方 React WebUI、FastAPI 与翻译内核，面向 Windows 10（1903 或更新版本）/11 x64。交付文件为 `wenyi-webui-windows-x64.zip`，由 **Windows 环境**中的 `Windows portable WebUI` 工作流生成。源码或 Linux 测试通过不代表 Windows 产物已经验收；发布前仍需完成本文末尾的 Windows 检查。
 
 ## 启动和配置
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import hashlib
 import os
+import subprocess
 from pathlib import Path
 
 
@@ -121,7 +122,126 @@ class ProcessOwner:
         ):
             raise ctypes.WinError(ctypes.get_last_error())
 
+    def spawn(self, args, *, output, env, cwd, restrict_admin=False):
+        if os.name != "nt":
+            return subprocess.Popen(
+                args,
+                cwd=cwd,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+            )
+        import msvcrt
+
+        import win32api
+        import win32con
+        import win32process
+        import win32security
+
+        current = win32api.GetCurrentProcess()
+        inherited = []
+        token = restricted = None
+        try:
+            with open(os.devnull, "rb") as null:
+                for source in (null, output):
+                    inherited.append(
+                        win32api.DuplicateHandle(
+                            current,
+                            msvcrt.get_osfhandle(source.fileno()),
+                            current,
+                            0,
+                            True,
+                            win32con.DUPLICATE_SAME_ACCESS,
+                        )
+                    )
+            startup = win32process.STARTUPINFO()
+            startup.dwFlags = win32con.STARTF_USESTDHANDLES
+            startup.hStdInput, startup.hStdOutput = inherited
+            startup.hStdError = inherited[1]
+            flags = (
+                win32con.CREATE_SUSPENDED
+                | win32con.CREATE_NO_WINDOW
+                | win32con.CREATE_UNICODE_ENVIRONMENT
+            )
+            parameters = (
+                args[0],
+                subprocess.list2cmdline(args),
+                None,
+                None,
+                True,
+                flags,
+                env,
+                str(cwd),
+                startup,
+            )
+            if restrict_admin:
+                # Match PostgreSQL's own frontend launch policy: retain this user,
+                # but mark Administrators and Power Users SIDs as deny-only.
+                token = win32security.OpenProcessToken(current, win32con.TOKEN_ALL_ACCESS)
+                disabled = [
+                    (win32security.CreateWellKnownSid(kind, None), 0)
+                    for kind in (
+                        win32security.WinBuiltinAdministratorsSid,
+                        win32security.WinBuiltinPowerUsersSid,
+                    )
+                ]
+                restricted = win32security.CreateRestrictedToken(token, 0, disabled, [], [])
+                handles = win32process.CreateProcessAsUser(restricted, *parameters)
+            else:
+                handles = win32process.CreateProcess(*parameters)
+            process_handle, thread, pid, _ = handles
+            process = WindowsProcess(args, process_handle, pid)
+            try:
+                # Own the process before it can create any descendants.
+                self.add(process)
+                win32process.ResumeThread(thread)
+            except BaseException:
+                process.terminate()
+                process.wait(timeout=10)
+                raise
+            finally:
+                thread.Close()
+            return process
+        finally:
+            for handle in inherited:
+                handle.Close()
+            if restricted is not None:
+                restricted.Close()
+            if token is not None:
+                token.Close()
+
     def close(self) -> None:
         if self.handle:
             self.kernel.CloseHandle(self.handle)
             self.handle = None
+
+
+class WindowsProcess:
+    """The small Popen interface used by the supervisor, backed by owned handles."""
+
+    def __init__(self, args, handle, pid):
+        self.args, self._handle, self.pid = args, handle, pid
+        self.returncode = None
+
+    def poll(self):
+        import win32event
+        import win32process
+
+        if win32event.WaitForSingleObject(self._handle, 0) == win32event.WAIT_OBJECT_0:
+            self.returncode = win32process.GetExitCodeProcess(self._handle)
+        return self.returncode
+
+    def wait(self, timeout=None):
+        import win32event
+
+        milliseconds = win32event.INFINITE if timeout is None else max(0, int(timeout * 1000))
+        if win32event.WaitForSingleObject(self._handle, milliseconds) == win32event.WAIT_TIMEOUT:
+            raise subprocess.TimeoutExpired(self.args, timeout)
+        return self.poll()
+
+    def terminate(self):
+        import win32api
+
+        if self.poll() is None:
+            win32api.TerminateProcess(self._handle, 1)

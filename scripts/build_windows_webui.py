@@ -18,12 +18,43 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+import xml.dom.minidom
 import zipfile
 from pathlib import Path
 
 from build_transfer_helper import build as build_transfer
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def utf8_manifest(original: bytes) -> bytes:
+    """Keep the vendor manifest and opt its narrow Windows APIs into UTF-8."""
+    namespace = "urn:schemas-microsoft-com:asm.v3"
+    setting_namespace = "http://schemas.microsoft.com/SMI/2019/WindowsSettings"
+    with xml.dom.minidom.parseString(original) as document:
+        root = document.documentElement
+        applications = root.getElementsByTagNameNS(namespace, "application")
+        if applications:
+            application = applications[0]
+        else:
+            application = document.createElementNS(namespace, "application")
+            application.setAttribute("xmlns", namespace)
+            root.appendChild(application)
+        settings = application.getElementsByTagNameNS(namespace, "windowsSettings")
+        if settings:
+            windows_settings = settings[0]
+        else:
+            windows_settings = document.createElementNS(namespace, "windowsSettings")
+            application.appendChild(windows_settings)
+        for old in list(
+            windows_settings.getElementsByTagNameNS(setting_namespace, "activeCodePage")
+        ):
+            old.parentNode.removeChild(old)
+        value = document.createElementNS(setting_namespace, "activeCodePage")
+        value.setAttribute("xmlns", setting_namespace)
+        value.appendChild(document.createTextNode("UTF-8"))
+        windows_settings.appendChild(value)
+        return document.toxml(encoding="utf-8")
 
 
 def sha256(path: Path) -> str:
@@ -88,6 +119,10 @@ def build(msys: Path, crt: Path) -> Path:
     cache.mkdir(exist_ok=True)
     manifest = json.loads((ROOT / "scripts/windows-runtime.json").read_text(encoding="utf-8"))
     downloads = {name: download(record, cache) for name, record in manifest.items()}
+    from PyInstaller.utils.win32 import winmanifest
+
+    application_manifest = work / "Wenyi.manifest"
+    application_manifest.write_bytes(utf8_manifest(winmanifest.create_application_manifest()))
     command = [
         sys.executable,
         "-m",
@@ -96,6 +131,8 @@ def build(msys: Path, crt: Path) -> Path:
         "Wenyi",
         "--onedir",
         "--windowed",
+        "--manifest",
+        str(application_manifest),
         "--clean",
         "--noconfirm",
         "--distpath",
@@ -168,6 +205,16 @@ def build(msys: Path, crt: Path) -> Path:
         or not (pg / "share/extension/pg_trgm.control").exists()
     ):
         raise RuntimeError("Bundled PostgreSQL must include pg_trgm")
+    # EDB's tools use ANSI argv and Win32 paths. A process-local UTF-8 manifest
+    # supports Chinese paths without changing the machine's locale or code page.
+    for executable in (pg / "bin").glob("*.exe"):
+        try:
+            original = winmanifest.read_manifest_from_executable(str(executable))
+        except ValueError:
+            original = winmanifest.create_application_manifest()
+        if isinstance(original, tuple):
+            original = original[1]
+        winmanifest.write_manifest_to_executable(str(executable), utf8_manifest(original))
     pango = runtime / "pango/bin"
     pango.mkdir(parents=True)
     for file in (msys / "ucrt64/bin").glob("*.dll"):
