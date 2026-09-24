@@ -4,13 +4,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
 import { statusLabel } from "@/i18n/status";
-import { api, isProjectBusy } from "@/lib/api";
+import { api, isProjectBusy, type QualityMode } from "@/lib/api";
 import { useProjectProgress } from "@/lib/ws";
 import { PageContainer, PageHeader } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/form";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ErrorNotice } from "@/components/ui/data";
+import { QualityPanel } from "./QualityPanel";
 import { ReviewIssues } from "./ReviewIssues";
 import { ReviewActivity } from "./ReviewActivity";
 import { reviewPhase, reviewProgress } from "./reviewData";
@@ -24,6 +25,8 @@ function ReviewWorkbench({ pid }: { pid: string }) {
   const { t, locale } = useI18n();
   const qc = useQueryClient();
   const [selected, setSelected] = useState<string>();
+  const [qualityMode, setQualityMode] = useState<QualityMode | "">("");
+  const [autofix, setAutofix] = useState<"" | "yes" | "no">("");
   const project = useQuery({
     queryKey: ["project", pid],
     queryFn: () => api.getProject(pid),
@@ -80,7 +83,11 @@ function ReviewWorkbench({ pid }: { pid: string }) {
         (!!progress ||
           ["paused", "error", "interrupted"].includes(job?.status || ""))));
   const review = useMutation({
-    mutationFn: () => api.runAiReview(pid),
+    mutationFn: () =>
+      api.runAiReview(pid, {
+        ...(qualityMode ? { quality_mode: qualityMode } : {}),
+        ...(autofix ? { autofix: autofix === "yes" } : {}),
+      }),
     onSuccess: () => {
       for (const key of ["project", "workflow", "review-runs"])
         qc.invalidateQueries({ queryKey: [key, pid] });
@@ -156,6 +163,43 @@ function ReviewWorkbench({ pid }: { pid: string }) {
       />
       <PageContainer className="space-y-5">
         <ErrorNotice error={error} />
+        {!historical && !busy && (
+          <div className="space-y-2 rounded border p-4">
+            <div className="flex flex-wrap gap-3">
+              <Select
+                aria-label={t("quality.mode")}
+                value={qualityMode}
+                onChange={(event) =>
+                  setQualityMode(event.target.value as QualityMode | "")
+                }
+              >
+                <option value="">{t("quality.projectDefault")}</option>
+                <option value="off">{t("quality.mode.off")}</option>
+                <option value="observe">{t("quality.mode.observe")}</option>
+                <option value="optimize">{t("quality.mode.optimize")}</option>
+              </Select>
+              <Select
+                aria-label={t("quality.publication")}
+                value={autofix}
+                onChange={(event) =>
+                  setAutofix(event.target.value as typeof autofix)
+                }
+              >
+                <option value="">{t("quality.publicationDefault")}</option>
+                <option value="no">{t("quality.shadowOnly")}</option>
+                <option value="yes">{t("quality.publish")}</option>
+              </Select>
+            </div>
+            {qualityMode && qualityMode !== "off" && (
+              <p className="text-sm text-muted-foreground">
+                {t("quality.uncalibrated")} {t("quality.publicationHelp")}
+              </p>
+            )}
+          </div>
+        )}
+        {run.data && Object.keys(run.data.quality || {}).length > 0 && (
+          <QualityPanel key={rid} pid={pid} rid={rid!} />
+        )}
         {historical && (
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="text-muted-foreground">

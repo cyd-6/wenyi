@@ -20,6 +20,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime
+from threading import local
 from typing import Any
 
 from ..i18n.languages import require_language
@@ -59,6 +60,7 @@ class RunStore(FileArtifacts):
         self.run_dir = run_dir
         self.chapters_dir = os.path.join(run_dir, "chapters")
         self._batch_glossary_event_cache: dict[int, set[str]] | None = None
+        self._state_lock_owner = local()
         if create:
             self.ensure_dirs()
 
@@ -106,8 +108,15 @@ class RunStore(FileArtifacts):
         """Briefly freeze manifest and chapters for atomic persistence or a consistent
         snapshot.
         """
-        with self._file_lock(".state.lock"):
+        if getattr(self._state_lock_owner, "held", False):
             yield
+            return
+        with self._file_lock(".state.lock"):
+            self._state_lock_owner.held = True
+            try:
+                yield
+            finally:
+                self._state_lock_owner.held = False
 
     @contextmanager
     def event_lock(self) -> Iterator[None]:
@@ -468,20 +477,15 @@ class RunStore(FileArtifacts):
 
     def _usage_commit_path(self, relative: str) -> str:
         """Restrict journal destinations to ledgers in this run, never arbitrary state."""
-        parts = relative.replace("\\", "/").split("/")
-        if relative != "usage.json" and not (
-            len(parts) == 3
-            and parts[0] == "reviews"
-            and parts[1].startswith("review-")
-            and parts[2] == "usage.json"
-        ):
-            raise ValueError("Invalid usage journal destination")
+        from ..storage.usage_commit import usage_commit_key
+
+        parts = usage_commit_key(relative).split("/")
         return os.path.join(self.run_dir, *parts)
 
     def recover_usage(self) -> None:
         """Idempotently finish an interrupted book/review ledger commit under the run lock."""
         from ..llm.routing import identity
-        from ..llm.usage import validate_usage
+        from ..storage.usage_commit import usage_commit_value
 
         pending = os.path.join(self.run_dir, "usage-pending.json")
         if not os.path.isfile(pending):
@@ -492,7 +496,7 @@ class RunStore(FileArtifacts):
         writes = []
         for entry in transaction["entries"]:
             path = self._usage_commit_path(entry["path"])
-            value = validate_usage(entry["value"])
+            value = usage_commit_value(entry["path"], entry["value"])
             current = self._read_json(path) if os.path.isfile(path) else None
             if identity(current) not in {entry["before"], identity(value)}:
                 raise ValueError("Usage ledger changed outside its pending commit")

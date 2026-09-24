@@ -20,6 +20,37 @@ segment:
 
 # ── Pipeline options (quality and cost)───────────────────────────────────────────
 pipeline:
+  quality:
+    mode: "off" # Experimental and uncalibrated: off | observe | optimize
+    rubric_version: quality-v1
+    max_candidates_per_unit: 2
+    max_context_expansions: 1
+    max_verifications_per_unit: 1
+    max_units_to_optimize_per_run: 100
+    max_generation_requests_per_run: 300
+    max_judge_requests_per_run: 10000
+    context:
+      preceding_units: 2
+      following_units: 1
+      max_estimated_input_tokens: 6000
+    thresholds:
+      adequacy_min: 75
+      coverage_min: 75
+      terminology_min: 75
+      reference_min: 75
+      fluency_min: 70
+      voice_min: 65
+      min_confidence_to_act: 0.70
+      min_pairwise_support: 0.75
+      min_dimension_improvement: 5
+      severe_tail_probability: 0.20
+    comparison:
+      swap_order: true
+      keep_original_on_tie: true
+    audit:
+      sample_rate: 0.05
+      seed: 42
+    on_error: continue_review
   review: true # Run final review after whole-book translation; disable with --no-review
   align_retry_limit: 2
   polish: true # Polish the full translation with the strong tier; enabled by default and adds substantial cost

@@ -173,6 +173,14 @@ def workflow(pid: str) -> dict:
             autofix = params.get("autofix")
             if autofix is None:
                 autofix = pipeline.get("review_autofix")
+            quality_mode = params.get("quality_mode") or pipeline.get("quality", {}).get(
+                "mode", "off"
+            )
+            if review and quality_mode != "off":
+                add("quality_score", "段落质量评分")
+                if quality_mode == "optimize":
+                    add("quality_generate", "有限候选生成")
+                    add("quality_compare", "候选盲比较")
             add("review", "全书审校", review)
             add(
                 "review_autofix",

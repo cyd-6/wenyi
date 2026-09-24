@@ -4,15 +4,25 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ..job_service import start_job
-from ..project_service import project_write, require_book, require_project, storage_for
+from ..project_service import (
+    effective_config,
+    project_write,
+    require_book,
+    require_project,
+    storage_for,
+)
+from ..quality_presentation import candidate_details, quality_records
 from ..review_presentation import review_items
 from ..schemas import (
     ChapterSegments,
     JobEnqueued,
+    QualityPage,
+    QualityUnitDetail,
     ReviewRun,
     ReviewRunRequest,
     SegmentEdit,
@@ -42,6 +52,7 @@ def _review_run(storage, rid: str) -> dict:
         "changes": result.get("changes") or [],
         "autofix": autofix,
         "summary": result.get("summary") or {},
+        "quality": storage.read_artifact(f"reviews/{rid}/quality/summary.json") or {},
         "result": result,
     }
 
@@ -55,7 +66,10 @@ async def run_ai_review(pid: str, body: ReviewRunRequest | None = None) -> dict:
     manifest = storage.load_manifest()
     if not manifest.get("chapters") or storage.pending_chapters():
         raise HTTPException(409, "Complete every chapter translation before whole-book review")
-    return await start_job(pid, "review", params={"autofix": body.autofix if body else None})
+    params = {"autofix": body.autofix if body else None}
+    if body is not None and body.quality_mode is not None:
+        params["quality_mode"] = body.quality_mode
+    return await start_job(pid, "review", params=params)
 
 
 @router.get("/runs", response_model=list[ReviewRun])
@@ -78,6 +92,96 @@ def get_run(pid: str, rid: str) -> dict:
         run = _review_run(storage, rid)
         run["items"] = review_items(storage, rid, run["result"], run["autofix"])
     return run
+
+
+@router.get("/runs/{rid}/quality", response_model=QualityPage)
+def get_quality(
+    pid: str,
+    rid: str,
+    view: Literal["formal", "shadow"] = "formal",
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    status: str | None = None,
+    max_score: float | None = Query(None, ge=0, le=100),
+    chapter: int | None = Query(None, ge=0),
+    segment: int | None = Query(None, ge=0),
+) -> dict:
+    project = require_project(pid)
+    require_book(project)
+    storage = storage_for(pid)
+    with storage.state_lock():
+        _review_run(storage, rid)
+        rows = quality_records(storage, rid, effective_config(project), view=view)
+        if chapter is not None:
+            rows = [row for row in rows if row.get("chapter_index") == chapter]
+        if segment is not None:
+            rows = [
+                row
+                for row in rows
+                if any(member["segment_index"] == segment for member in row.get("members", []))
+            ]
+        if status:
+            rows = [
+                row
+                for row in rows
+                if status
+                in {
+                    row.get("status"),
+                    row.get("publication_status"),
+                    row.get("decision", {}).get("action"),
+                    "stale" if row.get("stale") else None,
+                }
+            ]
+        if max_score is not None:
+            rows = [
+                row
+                for row in rows
+                if row["minimum_score"] is not None and row["minimum_score"] <= max_score
+            ]
+        return {
+            "items": rows[offset : offset + limit],
+            "total": len(rows),
+            "offset": offset,
+            "limit": limit,
+            "text_scope": view,
+            "summary": storage.read_artifact(f"reviews/{rid}/quality/summary.json") or {},
+        }
+
+
+@router.get("/runs/{rid}/quality/{uid}", response_model=QualityUnitDetail)
+def get_quality_unit(
+    pid: str, rid: str, uid: str, view: Literal["formal", "shadow"] = "formal"
+) -> dict:
+    project = require_project(pid)
+    require_book(project)
+    storage = storage_for(pid)
+    with storage.state_lock():
+        _review_run(storage, rid)
+        row = next(
+            (
+                row
+                for row in quality_records(storage, rid, effective_config(project), view=view)
+                if row["unit_id"] == uid
+            ),
+            None,
+        )
+        if row is None:
+            raise HTTPException(404, "quality unit not found")
+        chapter = storage.load_chapter(row["chapter_index"])
+        segments = {segment.index: segment for segment in chapter.segments}
+        members = [
+            segments[member["segment_index"]]
+            for member in row["members"]
+            if member["segment_index"] in segments
+        ]
+        baseline = storage.read_artifact(f"reviews/{rid}/quality/units/{uid}/baseline.json") or {}
+        return {
+            **row,
+            "source_parts": [segment.source for segment in members],
+            "current_target_parts": [segment.target for segment in members],
+            "original_target_parts": baseline.get("target_parts", []),
+            "candidates": candidate_details(storage, rid, uid),
+        }
 
 
 @router.get("/{ci}", response_model=ChapterSegments)

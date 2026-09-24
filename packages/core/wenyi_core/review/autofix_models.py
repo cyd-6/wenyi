@@ -71,6 +71,7 @@ class AutofixCandidates:
     records: list[AutofixRecord] = field(default_factory=list)
     overrides: dict[tuple[int, int], str] = field(default_factory=dict)
     issue_group_count: int = 0
+    quality_groups: dict[tuple[int, int], dict[str, Any]] = field(default_factory=dict)
 
     def add(
         self,

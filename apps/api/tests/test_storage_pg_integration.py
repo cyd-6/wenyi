@@ -120,6 +120,18 @@ def initialize(storage, tmp_path):
     return doc, digest
 
 
+def test_quality_response_receipt_shares_usage_recovery(storage):
+    key = "reviews/review-quality/quality/responses/" + "b" * 64 + ".json"
+    response = {"status": "completed", "response": {"model": "jev-1.13.0"}}
+    usage = empty_usage()
+    storage.prepare_usage_commit({"usage.json": usage, key: response})
+    storage.recover_usage()
+    storage.recover_usage()
+    assert storage.load_usage() == usage
+    assert storage.read_artifact(key) == response
+    assert storage.read_artifact("usage-pending.json") is None
+
+
 def test_initialization_marker_and_complete_metadata_round_trip(storage, tmp_path):
     doc = document(tmp_path)
     digest = source_sha256(doc.source_path)

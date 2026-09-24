@@ -11,8 +11,10 @@ from ..review.models import ReviewOutcome
 from ..review.run_store import ReviewRunStore
 
 
-def prepare_identity(debug: ReviewRunStore, llm_config) -> dict[str, Any]:
-    inference = inference_snapshot(llm_config, ("autofix.verify", "autofix.fix"))
+def prepare_identity(debug: ReviewRunStore, llm_config, quality_operations=()) -> dict[str, Any]:
+    inference = inference_snapshot(
+        llm_config, ("autofix.verify", "autofix.fix", *quality_operations)
+    )
     plan = debug.load_json("autofix/plan.json")
     if plan is not None and plan.get("inference") != inference:
         raise ValueError(
@@ -57,6 +59,8 @@ def save_plan(
                 "alignment_status": "pending",
             }
         )
+        if group := candidates.quality_groups.get((chapter_index, text_index)):
+            locations[-1].update(group)
 
     index: AutofixPlan = {
         "version": 1,
@@ -67,6 +71,8 @@ def save_plan(
         "records": records,
         "locations": locations,
     }
+    if any(operation.startswith("review.quality_") for operation in inference):
+        index["quality_final_status"] = "pending"
     debug.write_json("autofix/index.json", index)
     debug.log_event(
         "review_autofix_planned",

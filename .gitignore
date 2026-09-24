@@ -13,6 +13,7 @@ state/
 *.txt
 !packages/core/wenyi_core/i18n/data/tasks/*.txt
 !packages/core/wenyi_core/i18n/data/shared/*.txt
+!packages/core/wenyi_core/i18n/data/quality/generation_judge.txt
 
 # Input books and generated artifacts (do not commit)
 output/
@@ -28,6 +29,7 @@ explore/
 
 # Web workspace artifacts.
 node_modules/
+.pnpm-store/
 .next/
 .turbo/
 .env

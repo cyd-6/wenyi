@@ -11,7 +11,7 @@ from ..config import Config
 from ..glossary.store import GlossaryTerm
 from ..ingest.models import Chapter
 from ..llm.base import LLMClient
-from ..review.autofix_models import AutofixCandidates, integer_index
+from ..review.autofix_models import AutofixCandidates, integer_index, text_hash
 from ..review.evidence import BookEvidenceIndex
 from ..review.models import ReviewOutcome
 from ..review.run_store import ReviewRunStore
@@ -35,6 +35,7 @@ class AutofixCandidateService:
         debug: ReviewRunStore,
         *,
         progress: ProgressFn | None = None,
+        quality=None,
     ) -> AutofixCandidates:
         chapters_by_index = {chapter.index: chapter for chapter in chapters}
         candidates = AutofixCandidates()
@@ -53,6 +54,20 @@ class AutofixCandidateService:
             (dict(change) for change in outcome.changes if isinstance(change, dict)),
             key=location_key,
         )
+        conflicts = set()
+        for change in changes:
+            chapter_index, text_index = location_key(change)
+            chapter = chapters_by_index.get(chapter_index)
+            if chapter is None or not 0 <= text_index < len(chapter.text_segments):
+                continue
+            expected = change.get("formal_before_hash")
+            current = chapter.text_segments[text_index].target
+            if expected and (current is None or text_hash(current) != expected):
+                conflicts.update(
+                    item["quality_unit_id"]
+                    for item in change.get("provenance", [])
+                    if item.get("quality_unit_id")
+                )
         for change in changes:
             chapter_index = integer_index(change.get("chapter"))
             text_index = integer_index(change.get("index"))
@@ -85,6 +100,21 @@ class AutofixCandidateService:
             location = (chapter.index, text_index)
             before = overrides.get(location, segment.target or "")
             after = suggested
+            if any(
+                item.get("quality_unit_id") in conflicts for item in change.get("provenance", [])
+            ):
+                add_record(
+                    chapter=chapter.index,
+                    index=text_index,
+                    segment_ref=f"ch{chapter.index}:text{text_index}:seg{segment.index}",
+                    origin="change",
+                    before=before,
+                    after=after,
+                    status="failed",
+                    reason="formal_target_changed",
+                    source_change=change,
+                )
+                continue
             add_record(
                 chapter=chapter.index,
                 index=text_index,
@@ -103,6 +133,7 @@ class AutofixCandidateService:
             if after != before:
                 overrides[location] = after
 
+        inherited_overrides = dict(overrides)
         evidence = BookEvidenceIndex(
             chapters,
             all_terms,
@@ -274,6 +305,50 @@ class AutofixCandidateService:
                 artifacts=[agent_artifact, fixer_artifact],
             )
             overrides[location] = patch.after
+
+        if quality is not None and self.config.pipeline.quality.mode == "optimize":
+            proposed = {
+                location: value
+                for location, value in overrides.items()
+                if value
+                != inherited_overrides.get(
+                    location, chapters_by_index[location[0]].text_segments[location[1]].target
+                )
+            }
+            accepted, decisions = quality.gate(
+                chapters, inherited_overrides, proposed, origin="final_issue_fix"
+            )
+            debug.write_json("autofix/quality-gate.json", decisions)
+            for record in candidates.records:
+                if record["origin"] != "final_issue_fix":
+                    continue
+                decision = next(
+                    (
+                        item
+                        for item in decisions
+                        if record["segment_ref"] in item.get("member_refs", [])
+                    ),
+                    None,
+                )
+                if decision is not None:
+                    record["quality_unit_id"] = decision["unit_id"]
+                    record["quality_decision_ref"] = decision.get("decision_ref")
+                    record["member_refs"] = decision["member_refs"]
+            for location in proposed:
+                if location in accepted:
+                    continue
+                if location in inherited_overrides:
+                    overrides[location] = inherited_overrides[location]
+                else:
+                    overrides.pop(location, None)
+                for record in candidates.records:
+                    if (
+                        (record["chapter"], record["index"]) == location
+                        and record["origin"] == "final_issue_fix"
+                        and record["status"] == "planned"
+                    ):
+                        record["status"] = "failed"
+                        record["reason"] = "quality_comparison_rejected"
 
         candidates.issue_group_count = len(jobs)
         return candidates

@@ -212,6 +212,7 @@ Wenyi combines whole-book understanding, batch translation, optional polishing, 
 - [Usage guide](docs/usage.md) — installation, Windows setup, input/output, resumability, independent stages
 - [Configuration](docs/configuration.md) — providers, languages, pipeline switches, segmentation, paths
 - [Translation pipeline](docs/pipeline.md) — whole-book analysis, terminology, context, polishing, review
+- [Paragraph quality](docs/quality.md) — experimental DeepSeek JSON or native Jev scoring, bounded shadow candidates, formal/shadow views and independent evaluation; off by default
 - [Web deployment](docs/web.md) — Docker/local Web stack, workers, exports, and project workflows
 - [Contributing](CONTRIBUTING.md) — development, testing, and contribution guidelines
 

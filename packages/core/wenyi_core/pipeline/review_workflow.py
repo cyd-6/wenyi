@@ -24,6 +24,7 @@ from ..review.run_store import ReviewRunStore
 from ..review.session import ReviewPolicy, content_digest, review_overlay_digest
 from ..storage.protocol import Storage
 from . import review_results
+from .quality_workflow import QualityWorkflow
 from .review_checkpoint import ReviewCheckpoint, ReviewInputs
 from .review_chunks import ReviewChunkService
 from .review_rounds import ReviewRoundService
@@ -60,7 +61,7 @@ class ReviewService:
         from ..llm.operations import configured_operations
         from ..llm.routing import inference_snapshot
 
-        return {
+        snapshot = {
             "source_lang": self._runtime.config.source_lang,
             "target_lang": self._runtime.config.target_lang,
             "honorific_strategy": self._runtime.config.honorific_strategy,
@@ -87,6 +88,9 @@ class ReviewService:
                 self._runtime.config.pipeline.review_clean_confirmations
             ),
         }
+        if self._runtime.config.pipeline.quality.mode != "off":
+            snapshot["quality"] = self._runtime.config.pipeline.quality.model_dump(mode="json")
+        return snapshot
 
     @staticmethod
     def _review_glossary_fingerprint(terms: list[GlossaryTerm]) -> str:
@@ -104,6 +108,10 @@ class ReviewService:
         review_id = latest.get("review_id")
         if not isinstance(review_id, str) or not review_id:
             return False
+        if self._runtime.config.pipeline.quality.mode != "off":
+            quality = store.read_artifact(f"reviews/{review_id}/quality/summary.json")
+            if not isinstance(quality, dict) or quality.get("status") != "completed":
+                return False
         metadata = store.read_artifact(f"reviews/{review_id}/rounds/metadata.json")
         if not isinstance(metadata, dict):
             return False
@@ -226,11 +234,11 @@ class ReviewService:
             return opened
         loaded, analysis, debug = opened.chapters, opened.analysis, opened.debug
 
-        def save_review_usage() -> dict[str, Any]:
+        def save_review_usage(artifacts=None) -> dict[str, Any]:
             """Persist this review's usage delta and merge it into cumulative book usage."""
             from ..llm.usage import empty_usage
 
-            self._runtime.flush_usage(store, scope="review", review=debug)
+            self._runtime.flush_usage(store, scope="review", review=debug, artifacts=artifacts)
             return debug.load_usage() or empty_usage()
 
         policy = ReviewPolicy(
@@ -246,8 +254,25 @@ class ReviewService:
         start_round = recovery.start_round
         _resume_latest = recovery.latest
         _resume_scan_done = _resume_latest is not None
+        quality = None
+        if self._runtime.config.pipeline.quality.mode != "off":
+            quality = QualityWorkflow(
+                self._runtime.config,
+                self._runtime.client,
+                store,
+                debug.review_id,
+                all_terms,
+                analysis,
+                flush_usage=save_review_usage,
+                progress=progress,
+            )
 
         try:
+            if quality is not None and not state.quality.get("prelude_done"):
+                patches = quality.prelude(loaded, state.target_overrides)
+                state.apply_quality_patches(loaded, patches)
+                state.quality = {"schema_version": 1, "prelude_done": True}
+                checkpoint.save(state, start_round, phase="quality_done")
             for review_round in range(start_round, max_review_rounds + 1):
                 if progress:
                     progress(0, 0, f"Preparing review R{review_round}…")
@@ -326,6 +351,50 @@ class ReviewService:
                         fix_round=state.fix_rounds + 1,
                         progress=progress,
                     )
+                    patch_rows = [patch.as_dict() for patch in patches]
+                    if (
+                        quality is not None
+                        and self._runtime.config.pipeline.quality.mode == "optimize"
+                    ):
+                        proposed = {(patch.chapter, patch.index): patch.after for patch in patches}
+                        accepted, decisions = quality.gate(
+                            loaded, state.target_overrides, proposed, origin="review_fix"
+                        )
+                        rejected = [
+                            patch
+                            for patch in patch_rows
+                            if (patch["chapter"], patch["index"]) not in accepted
+                        ]
+                        failures.extend(
+                            {
+                                "chapter": patch["chapter"],
+                                "index": patch["index"],
+                                "issue_ids": patch["issue_ids"],
+                                "status": "failed",
+                                "reason": "quality_comparison_rejected",
+                            }
+                            for patch in rejected
+                        )
+                        patch_rows = [
+                            patch
+                            for patch in patch_rows
+                            if (patch["chapter"], patch["index"]) in accepted
+                        ]
+                        for patch in patch_rows:
+                            patch["origin"] = "review_fix"
+                            decision = next(
+                                (
+                                    item
+                                    for item in decisions
+                                    if patch["segment_ref"] in item.get("member_refs", [])
+                                ),
+                                None,
+                            )
+                            if decision is not None:
+                                patch["quality_unit_id"] = decision["unit_id"]
+                                patch["quality_decision_ref"] = decision.get("decision_ref")
+                                patch["member_refs"] = decision["member_refs"]
+                        debug.write_json("quality-gate.json", decisions)
                     current_targets = {
                         (patch.chapter, patch.index): segment.target
                         for patch in patches
@@ -334,13 +403,13 @@ class ReviewService:
                     plan = state.prepare_fix(
                         loaded,
                         state.latest,
-                        [patch.as_dict() for patch in patches],
+                        patch_rows,
                         failures,
                         current_targets,
                         review_round,
                         round_summary,
                     )
-                    debug.write_json("patches.json", [patch.as_dict() for patch in patches])
+                    debug.write_json("patches.json", patch_rows)
                     debug.write_json("fix_failures.json", failures)
                     advanced = False
                     if plan is not None:
@@ -357,6 +426,10 @@ class ReviewService:
                 state.termination = "max_rounds"
                 checkpoint.save(state, max_review_rounds)
 
+            if quality is not None:
+                formal_scores = quality.final_scores(loaded, {}, scope="formal")
+                shadow_scores = quality.final_scores(loaded, state.target_overrides, scope="shadow")
+                state.quality.update(formal=formal_scores, shadow=shadow_scores)
             result = review_results.write_completed(debug, state, loaded)
             usage = save_review_usage()
             store.log_event(

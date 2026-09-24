@@ -60,6 +60,14 @@ class ProviderSpec:
     client_class: str
     options_class: str
     options_module: str | None = None
+    capabilities: tuple[str, ...] = ("generation",)
+
+    @property
+    def effective_capabilities(self) -> tuple[str, ...]:
+        """Include typed judgments available through the strict generation bridge."""
+        if "generation" in self.capabilities and "judgment" not in self.capabilities:
+            return (*self.capabilities, "judgment")
+        return self.capabilities
 
     def _module(self):
         return importlib.import_module(f"wenyi_core.llm.providers.{self.module}")
@@ -78,6 +86,9 @@ class ProviderSpec:
 
     def validate_model(self, model: ModelConfig):
         _check_options(model.options)
+        validator = getattr(self.adapter_type(), "validate_model", None)
+        if validator is not None:
+            validator(model)
         return self.options_type().model_validate(model.options)
 
     def preset(self) -> dict[str, Any]:
@@ -134,6 +145,13 @@ PROVIDERS = register_providers(
         ),
         ProviderSpec("vllm", "vllm", "VLLMClient", "OpenAICompatibleOptions", "openai_compatible"),
         ProviderSpec("gemini", "gemini", "GeminiClient", "GeminiOptions"),
+        ProviderSpec(
+            "typesafe",
+            "typesafe",
+            "TypeSafeClient",
+            "TypeSafeOptions",
+            capabilities=("judgment",),
+        ),
         ProviderSpec("fake", "fake", "FakeProvider", "FakeOptions"),
     )
 )

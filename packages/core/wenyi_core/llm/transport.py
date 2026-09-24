@@ -12,6 +12,7 @@ from typing import Any, Generic, TypeVar
 from pydantic import BaseModel, ConfigDict
 
 from .configuration import ProviderConfig
+from .judgments import JudgmentRequest, JudgmentResult
 from .retrying import RetryReporter, provider_retry
 from .usage import UsageSample
 
@@ -92,6 +93,34 @@ class ProviderAdapter(ABC):
                 return self._request(messages, model, json_mode=json_mode, context=context)
 
         return request()
+
+    def evaluate(
+        self, judgment: JudgmentRequest, model: ResolvedModel, *, context: RequestContext
+    ) -> JudgmentResult:
+        """Share transport retry/attempt hooks while keeping native payloads typed."""
+        self.validate_judgment_request(judgment, model)
+        reporter = RetryReporter(
+            provider=self.cfg.kind,
+            tier=context.tier,
+            stage=context.operation,
+            max_attempts=self.cfg.max_retries + 1,
+            emit=context.emit,
+        )
+
+        @provider_retry(self.cfg.max_retries, reporter, sleep=context.sleep)
+        def request() -> JudgmentResult:
+            with context.attempt_scope():
+                return self._evaluate(judgment, model, context=context)
+
+        return request()
+
+    def validate_judgment_request(self, request: JudgmentRequest, model: ResolvedModel) -> None:
+        """Check provider context constraints before acquiring a paid request reservation."""
+
+    def _evaluate(
+        self, request: JudgmentRequest, model: ResolvedModel, *, context: RequestContext
+    ) -> JudgmentResult:
+        raise ValueError(f"Provider {self.cfg.kind} does not support native judgments")
 
     @abstractmethod
     def _request(

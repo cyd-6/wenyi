@@ -677,6 +677,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{pid}/review/runs/{rid}/quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Quality */
+        get: operations["get_quality_projects__pid__review_runs__rid__quality_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{pid}/review/runs/{rid}/quality/{uid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Quality Unit */
+        get: operations["get_quality_unit_projects__pid__review_runs__rid__quality__uid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{pid}/review/{ci}": {
         parameters: {
             query?: never;
@@ -1308,6 +1342,194 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** QualityDimension */
+        QualityDimension: {
+            /** Score */
+            score?: number | null;
+            /** Normalized */
+            normalized?: number | null;
+            /** Confidence */
+            confidence?: number | null;
+            /**
+             * Status
+             * @default unknown
+             */
+            status: string;
+            /** Probabilities */
+            probabilities?: {
+                [key: string]: number;
+            } | number[];
+            /** Legend */
+            legend?: unknown;
+        };
+        /** QualityJudgeOut */
+        QualityJudgeOut: {
+            /** Model */
+            model?: string | null;
+            /** Resolved Model */
+            resolved_model?: string | null;
+            /** Requested Model */
+            requested_model?: string | null;
+            /** Model Identity Kind */
+            model_identity_kind?: string | null;
+            /** Rubric Version */
+            rubric_version?: string | null;
+            provenance?: components["schemas"]["QualityJudgmentProvenance"];
+        };
+        /** QualityJudgmentProvenance */
+        QualityJudgmentProvenance: {
+            /** Source */
+            source?: ("native" | "generated") | null;
+            /** Confidence */
+            confidence?: ("model_distribution" | "self_reported") | null;
+            /** Probabilities */
+            probabilities?: ("model_distribution" | "self_reported") | null;
+            /** Model Identity */
+            model_identity?: ("resolved" | "requested") | null;
+        };
+        /** QualityMember */
+        QualityMember: {
+            /** Text Index */
+            text_index: number;
+            /** Segment Index */
+            segment_index: number;
+        };
+        /** QualityPage */
+        QualityPage: {
+            /** Items */
+            items: components["schemas"]["QualityUnitOut"][];
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Limit */
+            limit: number;
+            /**
+             * Text Scope
+             * @enum {string}
+             */
+            text_scope: "formal" | "shadow";
+            /** Summary */
+            summary?: {
+                [key: string]: unknown;
+            };
+        };
+        /** QualityUnitDetail */
+        QualityUnitDetail: {
+            /** Unit Id */
+            unit_id: string;
+            /** Chapter Index */
+            chapter_index: number;
+            /** Members */
+            members?: components["schemas"]["QualityMember"][];
+            /**
+             * Kind
+             * @default text
+             */
+            kind: string;
+            /**
+             * Text Scope
+             * @enum {string}
+             */
+            text_scope: "formal" | "shadow";
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
+            /** Dimensions */
+            dimensions?: {
+                [key: string]: components["schemas"]["QualityDimension"];
+            };
+            judge?: components["schemas"]["QualityJudgeOut"];
+            /** Decision */
+            decision?: {
+                [key: string]: unknown;
+            };
+            /** Reason Codes */
+            reason_codes?: string[];
+            /**
+             * Publication Status
+             * @default not_published
+             */
+            publication_status: string;
+            /**
+             * Stale
+             * @default true
+             */
+            stale: boolean;
+            /**
+             * Calibration Status
+             * @default uncalibrated
+             * @constant
+             */
+            calibration_status: "uncalibrated";
+            /** Minimum Score */
+            minimum_score?: number | null;
+            /** Source Parts */
+            source_parts?: string[];
+            /** Current Target Parts */
+            current_target_parts?: (string | null)[];
+            /** Original Target Parts */
+            original_target_parts?: (string | null)[];
+            /** Candidates */
+            candidates?: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** QualityUnitOut */
+        QualityUnitOut: {
+            /** Unit Id */
+            unit_id: string;
+            /** Chapter Index */
+            chapter_index: number;
+            /** Members */
+            members?: components["schemas"]["QualityMember"][];
+            /**
+             * Kind
+             * @default text
+             */
+            kind: string;
+            /**
+             * Text Scope
+             * @enum {string}
+             */
+            text_scope: "formal" | "shadow";
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
+            /** Dimensions */
+            dimensions?: {
+                [key: string]: components["schemas"]["QualityDimension"];
+            };
+            judge?: components["schemas"]["QualityJudgeOut"];
+            /** Decision */
+            decision?: {
+                [key: string]: unknown;
+            };
+            /** Reason Codes */
+            reason_codes?: string[];
+            /**
+             * Publication Status
+             * @default not_published
+             */
+            publication_status: string;
+            /**
+             * Stale
+             * @default true
+             */
+            stale: boolean;
+            /**
+             * Calibration Status
+             * @default uncalibrated
+             * @constant
+             */
+            calibration_status: "uncalibrated";
+            /** Minimum Score */
+            minimum_score?: number | null;
+        };
         /** ResolveConflict */
         ResolveConflict: {
             /**
@@ -1410,11 +1632,17 @@ export interface components {
             };
             /** Items */
             items?: components["schemas"]["ReviewItem"][];
+            /** Quality */
+            quality?: {
+                [key: string]: unknown;
+            };
         };
         /** ReviewRunRequest */
         ReviewRunRequest: {
             /** Autofix */
             autofix?: boolean | null;
+            /** Quality Mode */
+            quality_mode?: ("off" | "observe" | "optimize") | null;
         };
         /** SegmentEdit */
         SegmentEdit: {
@@ -3112,6 +3340,81 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReviewRun"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_quality_projects__pid__review_runs__rid__quality_get: {
+        parameters: {
+            query?: {
+                view?: "formal" | "shadow";
+                offset?: number;
+                limit?: number;
+                status?: string | null;
+                max_score?: number | null;
+                chapter?: number | null;
+                segment?: number | null;
+            };
+            header?: never;
+            path: {
+                pid: string;
+                rid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_quality_unit_projects__pid__review_runs__rid__quality__uid__get: {
+        parameters: {
+            query?: {
+                view?: "formal" | "shadow";
+            };
+            header?: never;
+            path: {
+                pid: string;
+                rid: string;
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityUnitDetail"];
                 };
             };
             /** @description Validation Error */

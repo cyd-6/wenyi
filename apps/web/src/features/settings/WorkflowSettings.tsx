@@ -1,3 +1,4 @@
+import { QualitySettings } from "./QualitySettings";
 import { useI18n } from "@/i18n";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input, Label, Select } from "@/components/ui/form";
@@ -43,6 +44,12 @@ export function WorkflowSettings({
             </label>
           ))}
         </div>
+      )}
+      {!subtitles && (
+        <QualitySettings
+          value={section(config, "pipeline").quality}
+          onChange={(value) => onField("pipeline", "quality", value)}
+        />
       )}
       {subtitles && (
         <p className="text-sm text-muted-foreground">

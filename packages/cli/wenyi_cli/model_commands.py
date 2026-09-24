@@ -67,7 +67,11 @@ def register_model_commands(
         """Explain an operation's defaults, effective request and selection origin."""
         try:
             spec = require_operation(operation)
-            route = resolve_routes(load_config().llm)[operation]
+            route = resolve_routes(load_config().llm).get(operation)
+            if route is None:
+                raise ValueError(
+                    f"Operation {operation} requires an explicit llm.routes model or tier"
+                )
             typer.echo(json.dumps({"description": spec.description, **route.describe()}, indent=2))
         except ValueError as error:
             raise typer.BadParameter(str(error)) from None

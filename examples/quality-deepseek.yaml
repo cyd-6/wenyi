@@ -1,0 +1,60 @@
+# Experimental JSON scoring through the existing DeepSeek generation provider.
+# Set DEEPSEEK_API_KEY in the environment; no TypeSafe/Jev connection is used.
+# Keep scoring and publication disabled until a command explicitly enables them.
+# This separate judge profile leaves the preset translation/strong profiles unchanged.
+# No comparative cost or translation-quality benefit has been measured.
+# Generated probabilities/confidence are self-reported, uncalibrated values.
+language:
+  source: en
+  target: zh
+
+llm:
+  preset: deepseek
+  models:
+    quality_json:
+      provider: default
+      model: deepseek-flash
+      max_output_tokens: 4096
+      options:
+        thinking: false
+  routes:
+    review.quality_score: {model: quality_json}
+    # Compare inherits the score route. Other quality operations retain their
+    # existing translation/polish/strong routes from the DeepSeek preset.
+  budget:
+    max_requests: 1000
+
+pipeline:
+  review: true
+  review_autofix: false
+  quality:
+    mode: "off"
+    rubric_version: quality-v1
+    max_candidates_per_unit: 2
+    max_context_expansions: 1
+    max_verifications_per_unit: 1
+    max_units_to_optimize_per_run: 100
+    max_generation_requests_per_run: 300
+    max_judge_requests_per_run: 10000
+    context:
+      preceding_units: 2
+      following_units: 1
+      max_estimated_input_tokens: 6000
+    thresholds:
+      adequacy_min: 75
+      coverage_min: 75
+      terminology_min: 75
+      reference_min: 75
+      fluency_min: 70
+      voice_min: 65
+      min_confidence_to_act: 0.70
+      min_pairwise_support: 0.75
+      min_dimension_improvement: 5
+      severe_tail_probability: 0.20
+    comparison:
+      swap_order: true
+      keep_original_on_tie: true
+    audit:
+      sample_rate: 0.05
+      seed: 42
+    on_error: continue_review

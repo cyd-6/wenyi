@@ -208,6 +208,7 @@ uv run wenyi review book.epub --autofix
 - [使用指南](usage.md) — 安装、Windows 使用、输入输出、断点续跑和独立工作流阶段
 - [配置说明](configuration.md) — 模型提供商、源语言、流水线开关、切分与路径配置
 - [翻译流程](pipeline.md) — 预扫、术语、上下文、润色、审校和断点续跑如何协作
+- [段落质量](quality.md) — 实验性 DeepSeek JSON 或原生 Jev 评分、有限影子候选、正式/影子视图与独立评估；默认关闭
 - [Web 部署](web.md) — Docker/本地 Web 栈、Worker、导出与项目工作流
 - [贡献指南](CONTRIBUTING.md) — 开发、测试和贡献要求
 

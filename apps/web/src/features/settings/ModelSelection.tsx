@@ -22,14 +22,27 @@ export function ModelSelection({
   const { t } = useI18n();
   const tiers = object(llm.tiers);
   const routes = object(llm.routes);
-  const modelOptions = Object.entries(models).map(([id, raw]) => {
-    const model = object(raw);
-    return (
-      <option key={id} value={id}>
-        {id} · {String(model.provider)} / {String(model.model)}
-      </option>
-    );
-  });
+  const modelOptions = (capability: string) =>
+    Object.entries(models)
+      .filter(([, raw]) => {
+        const model = object(raw);
+        const kind = object(object(llm.providers)[String(model.provider)]).kind;
+        const capabilities = Array.isArray(model.capabilities)
+          ? model.capabilities
+          : [kind === "typesafe" ? "judgment" : "generation"];
+        return (
+          capabilities.includes(capability) ||
+          (capability === "judgment" && capabilities.includes("generation"))
+        );
+      })
+      .map(([id, raw]) => {
+        const model = object(raw);
+        return (
+          <option key={id} value={id}>
+            {id} · {String(model.provider)} / {String(model.model)}
+          </option>
+        );
+      });
   const tierNames = [
     ["strong", t("providerSettings.qualityTier")],
     ["cheap", t("providerSettings.economyTier")],
@@ -51,7 +64,7 @@ export function ModelSelection({
                 })
               }
             >
-              {modelOptions}
+              {modelOptions("generation")}
             </Select>
           </div>
         ))}
@@ -69,9 +82,14 @@ export function ModelSelection({
           {operations.map((operation) => {
             const id = String(operation.id);
             const route = object(routes[id]);
+            const judgment = operation.capability === "judgment";
             const value = route.model
               ? String(route.model)
-              : `tier:${route.tier || operation.tier}`;
+              : route.tier
+                ? `tier:${route.tier}`
+                : judgment
+                  ? ""
+                  : `tier:${operation.tier}`;
             return (
               <div
                 key={id}
@@ -89,7 +107,9 @@ export function ModelSelection({
                   onChange={(event) => {
                     const selected = event.target.value;
                     const next = { ...routes };
-                    if (
+                    if (!selected) delete next[id];
+                    else if (
+                      !judgment &&
                       selected === `tier:${operation.tier}` &&
                       (!Array.isArray(route.fallbacks) ||
                         route.fallbacks.length === 0)
@@ -105,12 +125,21 @@ export function ModelSelection({
                     onChange({ ...llm, routes: next });
                   }}
                 >
+                  {judgment && (
+                    <option value="">
+                      {t(
+                        operation.inherits === "review.quality_score"
+                          ? "quality.inheritScoring"
+                          : "quality.explicitModel",
+                      )}
+                    </option>
+                  )}
                   {tierNames.map(([tier, label]) => (
                     <option key={tier} value={`tier:${tier}`}>
                       {label}
                     </option>
                   ))}
-                  {modelOptions}
+                  {modelOptions(judgment ? "judgment" : "generation")}
                 </Select>
               </div>
             );

@@ -42,6 +42,42 @@ uv run wenyi models check --for translate
 
 These commands preview routes and check credentials locally without requests. Keep the three default tiers or select models independently through `llm.routes`. See [configuration](configuration.md#models-and-operation-routing) for explicit config/usage conversion and budgets.
 
+## Paragraph quality scoring (experimental)
+
+Use existing DeepSeek credentials without a Jev API account. Set
+`DEEPSEEK_API_KEY` in the environment and use the
+[DeepSeek JSON example](../examples/quality-deepseek.yaml), matching its languages
+to the saved book. The example disables quality and publication by default;
+commands explicitly select a mode. Its separate judge profile preserves
+translation and strong-tier settings; existing generation routes still handle
+Review and candidates. Native Jev remains an option in [paragraph quality](quality.md)
+and requires the TypeSafe connection and `TYPESAFE_API_KEY` only when selected.
+
+Generated probabilities and confidence are self-reported, not native Jev signals,
+calibrated distributions or accuracy. No live evaluation establishes equal
+quality or a particular saving. The commands below call DeepSeek and can incur
+provider charges.
+
+```bash
+uv run wenyi --config examples/quality-deepseek.yaml review book.epub --quality-mode observe --no-autofix
+uv run wenyi --config examples/quality-deepseek.yaml review book.epub --quality-mode optimize --no-autofix
+uv run wenyi --config examples/quality-deepseek.yaml review book.epub --quality-mode optimize --autofix
+uv run wenyi --config examples/quality-deepseek.yaml translate book.epub --quality-mode optimize --review
+```
+
+`observe` only disables modifications by the added quality layer: existing
+Review/Fixer/Autofix remain active. Add `--no-autofix` whenever formal text must
+remain unchanged. Optimize can save candidates and accepted shadow changes
+without publishing them. Explicit `--autofix` allows the existing publisher to
+apply eligible changes after review and comparison.
+
+Quality requires a complete translated book and does not apply to SRT.
+`translate --no-review --quality-mode optimize` reports a conflict. Scores and
+confidence are uncalibrated signals, not translation accuracy. Web settings,
+Review and proofreading expose the same modes with formal/shadow and stale
+indicators. See [quality configuration and limits](quality.md) for budgets,
+failure behavior, recovery and offline/explicit paid evaluation commands.
+
 ## Multilingual translation (experimental)
 
 Run `uv run wenyi languages` to list built-in languages. Use this fragment in your configuration, retaining your existing model settings, for direct Chinese-to-English translation:

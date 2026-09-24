@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 from wenyi_core.config import Config
+from wenyi_core.llm.registry import provider_spec
 
 from .config import settings
 from .config_documents import config_document, parse_yaml
@@ -87,6 +88,12 @@ def save_settings(
 def registered_models(config: Config) -> dict[str, Any]:
     """Expose model choices without provider credentials or connection settings."""
     return {
-        key: {"model": profile.model, "provider": profile.provider}
+        key: {
+            "model": profile.model,
+            "provider": profile.provider,
+            "capabilities": list(
+                provider_spec(config.llm.providers[profile.provider].kind).effective_capabilities
+            ),
+        }
         for key, profile in config.llm.models.items()
     }

@@ -10,6 +10,8 @@ from uuid import uuid4
 
 from .base import LLMClient, Messages
 from .configuration import LLMConfig
+from .generated_judgments import judgment_messages, parse_generated_judgment
+from .judgments import JudgmentRequest, JudgmentResult
 from .limits import RequestLimits
 from .operations import require_operation
 from .registry import provider_spec
@@ -41,7 +43,7 @@ class RoutedLLMClient(LLMClient):
         connections: set[str] = set()
         for operation in self.routes if operations is None else operations:
             require_operation(operation)
-            route = self.routes[operation]
+            route = self._route(operation)
             connections.add(route.provider)
             connections.update(self.config.models[profile].provider for profile in route.fallbacks)
             self._validate_token_reservation(route)
@@ -55,6 +57,15 @@ class RoutedLLMClient(LLMClient):
     def cancel(self) -> None:
         self.limits.cancel()
 
+    def _route(self, operation: str) -> ResolvedRoute:
+        require_operation(operation)
+        if operation not in self.routes:
+            raise ValueError(
+                f"{operation}: configure an explicit llm.routes.review.quality_score "
+                "route to a generation model or a native judgment model"
+            )
+        return self.routes[operation]
+
     def complete(
         self,
         messages: Messages,
@@ -63,18 +74,30 @@ class RoutedLLMClient(LLMClient):
         json_mode: bool = False,
         max_tokens: int | None = None,
     ) -> str:
-        require_operation(operation)
-        primary = self.routes[operation]
-        return self._complete(messages, primary, json_mode=json_mode, max_tokens=max_tokens)
+        if require_operation(operation).capability != "generation":
+            raise ValueError(f"{operation}: judgment operations require evaluate(), not complete()")
+        primary = self._route(operation)
+        result = self._execute(messages, primary, json_mode=json_mode, max_tokens=max_tokens)
+        assert isinstance(result, str)
+        return result
 
-    def _complete(
+    def evaluate(self, request: JudgmentRequest, *, operation: str) -> JudgmentResult:
+        if require_operation(operation).capability != "judgment":
+            raise ValueError(
+                f"{operation}: generation operations require complete(), not evaluate()"
+            )
+        result = self._execute(request, self._route(operation), json_mode=False)
+        assert isinstance(result, JudgmentResult)
+        return result
+
+    def _execute(
         self,
-        messages: Messages,
+        messages: Messages | JudgmentRequest,
         primary: ResolvedRoute,
         *,
         json_mode: bool,
         max_tokens: int | None = None,
-    ) -> str:
+    ) -> str | JudgmentResult:
         operation = primary.operation
         if max_tokens is not None:
             primary = model_route(
@@ -103,6 +126,11 @@ class RoutedLLMClient(LLMClient):
         attempt_number = 0
         for position, route in enumerate(routes):
             self.limits.check()
+            generated_messages = (
+                judgment_messages(messages)
+                if isinstance(messages, JudgmentRequest) and route.judgment_source == "generated"
+                else None
+            )
             metadata = {
                 "call_id": call_id,
                 "operation": operation,
@@ -114,14 +142,19 @@ class RoutedLLMClient(LLMClient):
                 "model": route.model,
                 "inference_fingerprint": route.fingerprint,
             }
+            if route.judgment_source is not None:
+                metadata["judgment_source"] = route.judgment_source
 
             def emit(event: str, **payload) -> None:
                 self._emit_event(event, **{**metadata, "attempt": attempt_number, **payload})
 
             emit("llm_request_scheduled")
             active_reservation = None
+            last_sample: UsageSample | None = None
 
             def record(sample: UsageSample | None) -> None:
+                nonlocal last_sample
+                last_sample = sample
                 if sample is not None and active_reservation is not None:
                     active_reservation.actual_tokens = sample.total_tokens
                 self.usage.record(
@@ -138,15 +171,25 @@ class RoutedLLMClient(LLMClient):
 
             @contextmanager
             def attempt_scope():
-                nonlocal active_reservation, attempt_number
+                nonlocal active_reservation, attempt_number, last_sample
                 self._validate_token_reservation(route)
-                estimate = (
-                    len(json.dumps(messages, ensure_ascii=False).encode("utf-8"))
-                    + 256
-                    + (route.max_output_tokens or 0)
-                )
+                if isinstance(messages, JudgmentRequest) and generated_messages is None:
+                    estimate = (
+                        messages.estimated_input_tokens() + messages.estimated_output_tokens()
+                    )
+                else:
+                    estimate = (
+                        len(
+                            json.dumps(generated_messages or messages, ensure_ascii=False).encode(
+                                "utf-8"
+                            )
+                        )
+                        + 256
+                        + (route.max_output_tokens or 0)
+                    )
                 with self.limits.attempt(route.provider, estimate, emit) as reservation:
                     active_reservation = reservation
+                    last_sample = None
                     attempt_number += 1
                     emit("llm_request_started", estimated_tokens=estimate)
                     try:
@@ -164,12 +207,35 @@ class RoutedLLMClient(LLMClient):
                 self.limits.wait_for_retry,
             )
             try:
-                result = self.adapter(route.provider).generate(
-                    [dict(message) for message in messages],
-                    route.request_model(),
-                    json_mode=json_mode,
-                    context=context,
-                )
+                adapter = self.adapter(route.provider)
+                if isinstance(messages, JudgmentRequest):
+                    if generated_messages is not None:
+                        content = adapter.generate(
+                            generated_messages,
+                            route.request_model(),
+                            json_mode=True,
+                            context=context,
+                        )
+                        emit("llm_judgment_response", request_id=None)
+                        if last_sample is None:
+                            emit("llm_usage_unknown", reason="missing_generation_usage")
+                        result = parse_generated_judgment(
+                            content, messages, model=route.model, usage=last_sample
+                        )
+                        emit(
+                            "llm_judgment_received", actual_model=None, requested_model=route.model
+                        )
+                    else:
+                        result = adapter.evaluate(
+                            messages.model_copy(deep=True), route.request_model(), context=context
+                        )
+                else:
+                    result = adapter.generate(
+                        [dict(message) for message in messages],
+                        route.request_model(),
+                        json_mode=json_mode,
+                        context=context,
+                    )
             except Exception as error:
                 emit("llm_request_failed", error_type=type(error).__name__)
                 if position == len(routes) - 1 or not is_retryable_provider_error(error):
@@ -181,6 +247,8 @@ class RoutedLLMClient(LLMClient):
         raise RuntimeError("No model route was selected")
 
     def _validate_token_reservation(self, route: ResolvedRoute) -> None:
+        if route.judgment_source == "native":
+            return  # Structured answers have a request-specific reservation, not a generation cap.
         connection = self.config.providers[route.provider]
         quota = self.config.quotas.get(connection.quota_group or "")
         if (

@@ -265,6 +265,7 @@ class SegmentRevision(BaseModel):
 
 class ReviewRunRequest(RequestModel):
     autofix: bool | None = None
+    quality_mode: Literal["off", "observe", "optimize"] | None = None
 
 
 class ReviewLocation(BaseModel):
@@ -301,6 +302,70 @@ class ReviewRun(BaseModel):
     summary: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] = Field(default_factory=dict)
     items: list[ReviewItem] = Field(default_factory=list)
+    quality: dict[str, Any] = Field(default_factory=dict)
+
+
+class QualityDimension(BaseModel):
+    score: float | None = None
+    normalized: float | None = None
+    confidence: float | None = None
+    status: str = "unknown"
+    probabilities: dict[str, float] | list[float] = Field(default_factory=dict)
+    legend: Any = None
+
+
+class QualityMember(BaseModel):
+    text_index: int
+    segment_index: int
+
+
+class QualityJudgmentProvenance(BaseModel):
+    source: Literal["native", "generated"] | None = None
+    confidence: Literal["model_distribution", "self_reported"] | None = None
+    probabilities: Literal["model_distribution", "self_reported"] | None = None
+    model_identity: Literal["resolved", "requested"] | None = None
+
+
+class QualityJudgeOut(BaseModel):
+    model: str | None = None
+    resolved_model: str | None = None
+    requested_model: str | None = None
+    model_identity_kind: str | None = None
+    rubric_version: str | None = None
+    provenance: QualityJudgmentProvenance = Field(default_factory=QualityJudgmentProvenance)
+
+
+class QualityUnitOut(BaseModel):
+    unit_id: str
+    chapter_index: int
+    members: list[QualityMember] = Field(default_factory=list)
+    kind: str = "text"
+    text_scope: Literal["formal", "shadow"]
+    status: str = "pending"
+    dimensions: dict[str, QualityDimension] = Field(default_factory=dict)
+    judge: QualityJudgeOut = Field(default_factory=QualityJudgeOut)
+    decision: dict[str, Any] = Field(default_factory=dict)
+    reason_codes: list[str] = Field(default_factory=list)
+    publication_status: str = "not_published"
+    stale: bool = True
+    calibration_status: Literal["uncalibrated"] = "uncalibrated"
+    minimum_score: float | None = None
+
+
+class QualityPage(BaseModel):
+    items: list[QualityUnitOut]
+    total: int
+    offset: int
+    limit: int
+    text_scope: Literal["formal", "shadow"]
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class QualityUnitDetail(QualityUnitOut):
+    source_parts: list[str] = Field(default_factory=list)
+    current_target_parts: list[str | None] = Field(default_factory=list)
+    original_target_parts: list[str | None] = Field(default_factory=list)
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SubtitleCue(BaseModel):

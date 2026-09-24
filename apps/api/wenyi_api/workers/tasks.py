@@ -227,6 +227,15 @@ def _execute(
                 dal.set_job_status(job["id"], "running")
             progress(0, 0, "任务启动")
             config = _build_config_for(pid, run_id)
+            if params.get("quality_mode") is not None:
+                config.pipeline.quality.mode = params["quality_mode"]
+            if params.get("autofix") is not None:
+                config.pipeline.review_autofix = params["autofix"]
+            if config.pipeline.quality.mode != "off":
+                if kind == "chapter_translation":
+                    raise ValueError("Whole-book quality cannot run on a single chapter")
+                if kind == "translation" and not config.pipeline.review:
+                    raise ValueError("Quality requires whole-book review; enable pipeline.review")
             if kind == "parse":
                 result_status = _parse_source(pid, storage, config, progress)
             else:

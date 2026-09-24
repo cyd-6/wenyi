@@ -98,6 +98,10 @@ export type GlobalConfig = Output<"GlobalConfigOut">;
 export type GlobalConfigInput = components["schemas"]["GlobalConfigInput"];
 export type ProjectConfig = Output<"ProjectConfigOut">;
 export type ReviewRun = Output<"ReviewRun">;
+export type QualityPage = Output<"QualityPage">;
+export type QualityUnit = Output<"QualityUnitOut">;
+export type QualityUnitDetail = Output<"QualityUnitDetail">;
+export type QualityMode = "off" | "observe" | "optimize";
 export type ReviewItem = components["schemas"]["ReviewItem"];
 export type ReviewLocation = components["schemas"]["ReviewLocation"];
 export type Workflow = Output<"WorkflowOut">;
@@ -160,6 +164,35 @@ export const api = {
   getReviewRun: (pid: string, rid: string) =>
     request<ReviewRun>(
       `/projects/${pid}/review/runs/${encodeURIComponent(rid)}`,
+    ),
+  getQuality: (
+    pid: string,
+    rid: string,
+    params: {
+      view?: "formal" | "shadow";
+      offset?: number;
+      limit?: number;
+      status?: string;
+      max_score?: number;
+      chapter?: number;
+      segment?: number;
+    } = {},
+  ) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params))
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    return request<QualityPage>(
+      `/projects/${pid}/review/runs/${encodeURIComponent(rid)}/quality?${query}`,
+    );
+  },
+  getQualityUnit: (
+    pid: string,
+    rid: string,
+    uid: string,
+    view: "formal" | "shadow",
+  ) =>
+    request<QualityUnitDetail>(
+      `/projects/${pid}/review/runs/${encodeURIComponent(rid)}/quality/${encodeURIComponent(uid)}?view=${view}`,
     ),
   getSubtitles: (pid: string) =>
     request<SubtitleData>(`/projects/${pid}/subtitles`),
@@ -281,10 +314,13 @@ export const api = {
         body: JSON.stringify({ target, expected_target: expectedTarget }),
       },
     ),
-  runAiReview: (pid: string) =>
+  runAiReview: (
+    pid: string,
+    body: { quality_mode?: QualityMode; autofix?: boolean } = {},
+  ) =>
     request<JobEnqueued>(`/projects/${pid}/review/run`, {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify(body),
     }),
 
   getAnalysis: (pid: string) =>

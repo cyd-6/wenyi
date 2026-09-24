@@ -591,9 +591,9 @@ class PostgresStorage:
 
     @staticmethod
     def _usage_key(key: str) -> str:
-        if key != "usage.json" and not re.fullmatch(r"reviews/review-[^/]+/usage\.json", key):
-            raise ValueError("Invalid usage journal destination")
-        return key
+        from wenyi_core.storage.usage_commit import usage_commit_key
+
+        return usage_commit_key(key)
 
     def prepare_usage_commit(self, ledgers: dict[str, dict]) -> None:
         from wenyi_core.llm.routing import identity
@@ -611,7 +611,7 @@ class PostgresStorage:
 
     def recover_usage(self) -> None:
         from wenyi_core.llm.routing import identity
-        from wenyi_core.llm.usage import validate_usage
+        from wenyi_core.storage.usage_commit import usage_commit_value
 
         with self.state_lock():
             pending = self.read_artifact("usage-pending.json")
@@ -621,7 +621,7 @@ class PostgresStorage:
                 raise ValueError("Invalid usage journal")
             for entry in pending["entries"]:
                 key = self._usage_key(entry["path"])
-                value = validate_usage(entry["value"])
+                value = usage_commit_value(key, entry["value"])
                 if identity(self.read_artifact(key)) not in {entry["before"], identity(value)}:
                     raise ValueError("Usage ledger changed outside its pending commit")
                 self.write_artifact(key, value)

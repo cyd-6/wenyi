@@ -6,7 +6,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from ..config import Config
@@ -28,6 +28,8 @@ class OperationSpec:
     review: bool = False
     resumable_conversation: bool = False
     protocol_version: int = 1
+    capability: Literal["generation", "judgment"] = "generation"
+    requires_explicit_route: bool = False
 
 
 def register_operations(specs: Iterable[OperationSpec]) -> Mapping[str, OperationSpec]:
@@ -38,8 +40,13 @@ def register_operations(specs: Iterable[OperationSpec]) -> Mapping[str, Operatio
             raise ValueError(f"Invalid operation ID: {spec.id}")
         if spec.id in registry:
             raise ValueError(f"Duplicate operation: {spec.id}")
-        if (spec.tier is None) == (spec.inherits is None):
+        if (
+            sum((spec.tier is not None, spec.inherits is not None, spec.requires_explicit_route))
+            != 1
+        ):
             raise ValueError(f"Operation {spec.id} needs exactly one default selection")
+        if spec.capability not in {"generation", "judgment"}:
+            raise ValueError(f"Unknown operation capability: {spec.capability}")
         if spec.tier is not None and spec.tier not in TIERS:
             raise ValueError(f"Unknown default tier: {spec.tier}")
         if spec.output_tokens is not None and spec.output_tokens <= 0:
@@ -145,6 +152,56 @@ OPERATIONS = register_operations(
             review=True,
         ),
         OperationSpec(
+            "review.quality_score",
+            "Score logical translation units with structured judgments",
+            workflows=("translate", "review"),
+            flags=("quality_enabled",),
+            review=True,
+            capability="judgment",
+            requires_explicit_route=True,
+        ),
+        OperationSpec(
+            "review.quality_compare",
+            "Compare original and candidate translations blindly",
+            inherits="review.quality_score",
+            workflows=("translate", "review"),
+            flags=("quality_optimize",),
+            review=True,
+            capability="judgment",
+        ),
+        OperationSpec(
+            "review.quality_diagnose",
+            "Check uncertain quality findings against source evidence",
+            "strong",
+            workflows=("translate", "review"),
+            flags=("quality_optimize",),
+            review=True,
+        ),
+        OperationSpec(
+            "review.quality_retranslate",
+            "Generate an independent logical-unit translation",
+            inherits="translation.body",
+            workflows=("translate", "review"),
+            flags=("quality_optimize",),
+            review=True,
+        ),
+        OperationSpec(
+            "review.quality_revise",
+            "Revise only confirmed translation problems",
+            inherits="polish.body",
+            workflows=("translate", "review"),
+            flags=("quality_optimize",),
+            review=True,
+        ),
+        OperationSpec(
+            "review.quality_verify",
+            "Independently verify uncertain judgments",
+            "strong",
+            workflows=("translate", "review"),
+            flags=("quality_optimize",),
+            review=True,
+        ),
+        OperationSpec(
             "autofix.verify",
             "Verify issues before publication",
             inherits="review.verify",
@@ -183,7 +240,7 @@ def workflow_operations(workflow: str, flags: Mapping[str, object]) -> tuple[str
         for spec in OPERATIONS.values()
         if workflow in spec.workflows
         and (not spec.review or workflow == "review" or flags.get("review", True))
-        and all(flags.get(flag, True) for flag in spec.flags)
+        and all(flags.get(flag, not flag.startswith("quality_")) for flag in spec.flags)
     )
 
 
@@ -191,4 +248,8 @@ def configured_operations(config: Config, workflow: str) -> tuple[str, ...]:
     """Map product settings to registry flags without constructing a model client."""
     flags = config.pipeline.model_dump()
     flags["language_auto"] = config.source_lang == "auto"
+    quality = flags.get("quality", {})
+    mode = quality.get("mode", "off") if isinstance(quality, dict) else "off"
+    flags["quality_enabled"] = mode in {"observe", "optimize"}
+    flags["quality_optimize"] = mode == "optimize"
     return workflow_operations(workflow, flags)

@@ -20,6 +20,7 @@ from .autofix_candidates import AutofixCandidateService
 from .autofix_plan import prepare_identity, save_plan
 from .autofix_publish import AutofixPublisher
 from .docx_styles import DocxStyleService
+from .quality_workflow import QualityWorkflow
 
 if TYPE_CHECKING:
     from .annotations import AnnotationService
@@ -55,6 +56,8 @@ class ReviewAutofixService:
         progress: ProgressFn | None = None,
     ) -> ReviewOutcome | None:
         """Finish interrupted indexed publication before repeating review or agent calls."""
+        if not self._runtime.config.pipeline.review_autofix:
+            return None
         for name in ReviewRunStore.list_review_ids(store):
             if not name.startswith("review-"):
                 continue
@@ -74,9 +77,12 @@ class ReviewAutofixService:
                 debug = ReviewRunStore.open_existing(run_dir, storage=store)
                 debug.log_event("review_autofix_resumed", review_id=name)
                 return self._apply_index(store, debug, index, result, progress=progress)
-            if status in {"completed", "partial"} and not isinstance(result_autofix, dict):
+            if status in {"completed", "partial"} and (
+                not isinstance(result_autofix, dict)
+                or index.get("quality_final_status") == "pending"
+            ):
                 debug = ReviewRunStore.open_existing(run_dir, storage=store)
-                return self._publisher.finish(store, debug, index, result)
+                return self._finish_with_scores(store, debug, index, result, progress=progress)
             # Newest directories come first; once the newest is complete, never publish earlier indices.
             if status in {"completed", "partial"}:
                 return None
@@ -126,18 +132,67 @@ class ReviewAutofixService:
                     progress=progress,
                 )
             if status in {"completed", "partial"}:
-                return self._publisher.finish(store, debug, existing, outcome.result)
+                return self._finish_with_scores(
+                    store, debug, existing, outcome.result, progress=progress
+                )
 
-        inference = prepare_identity(debug, self._runtime.llm_config)
+        from ..llm.operations import configured_operations
+
+        quality_operations = tuple(
+            operation
+            for operation in configured_operations(self._runtime.config, "review")
+            if operation.startswith("review.quality_")
+        )
+        inference = prepare_identity(debug, self._runtime.llm_config, quality_operations)
         manifest = store.load_manifest()
         chapters = [
             store.load_chapter(row["index"])
             for row in manifest.get("chapters", [])
             if isinstance(row.get("index"), int)
         ]
+        quality = self._quality_workflow(store, debug, all_terms, progress)
         candidates = self._candidates.prepare(
-            chapters, store.load_analysis() or {}, outcome, all_terms, debug, progress=progress
+            chapters,
+            store.load_analysis() or {},
+            outcome,
+            all_terms,
+            debug,
+            progress=progress,
+            quality=quality,
         )
+        if quality is not None:
+            if self._runtime.config.pipeline.quality.mode == "optimize":
+                accepted, decisions = quality.gate(
+                    chapters, {}, candidates.overrides, origin="publication"
+                )
+                debug.write_json("autofix/quality-publication-gate.json", decisions)
+                for location in list(candidates.overrides):
+                    if location not in accepted:
+                        candidates.overrides.pop(location)
+                        for record in candidates.records:
+                            if (record["chapter"], record["index"]) == location and record[
+                                "status"
+                            ] == "planned":
+                                record["status"] = "failed"
+                                record["reason"] = "quality_publication_rejected"
+                # Include unchanged members too: one manually edited member blocks
+                # the complete logical paragraph at the chapter commit boundary.
+                from ..quality.units import build_quality_units
+
+                for unit in build_quality_units(chapters):
+                    if not any(
+                        (unit.chapter_index, i) in candidates.overrides for i in unit.text_indices
+                    ):
+                        continue
+                    group = {
+                        "quality_unit_id": unit.unit_id,
+                        "member_refs": list(unit.segment_refs),
+                    }
+                    for i, target in zip(unit.text_indices, unit.target_parts):
+                        location = (unit.chapter_index, i)
+                        candidates.overrides.setdefault(location, target)
+                        candidates.quality_groups[location] = group
+            quality.final_scores(chapters, candidates.overrides, scope="shadow")
         index = dict(save_plan(chapters, candidates, inference, debug, outcome))
         self._save_usage_delta(store, debug, scope="review_autofix_agent")
         return self._apply_index(
@@ -146,6 +201,22 @@ class ReviewAutofixService:
             index,
             outcome.result,
             progress=progress,
+        )
+
+    def _quality_workflow(self, store, debug, all_terms, progress):
+        if self._runtime.config.pipeline.quality.mode == "off":
+            return None
+        return QualityWorkflow(
+            self._runtime.config,
+            self._runtime.client,
+            store,
+            debug.review_id,
+            all_terms,
+            store.load_analysis() or {},
+            progress=progress,
+            flush_usage=lambda artifacts=None: self._runtime.flush_usage(
+                store, scope="quality_autofix", review=debug, artifacts=artifacts
+            ),
         )
 
     def _save_usage_delta(
@@ -168,5 +239,21 @@ class ReviewAutofixService:
         progress: ProgressFn | None,
     ) -> ReviewOutcome:
         self._publisher.apply(store, debug, index, result, progress=progress)
+        return self._finish_with_scores(store, debug, index, result, progress=progress)
+
+    def _finish_with_scores(self, store, debug, index, result, *, progress):
+        if index.get("quality_final_status") == "pending":
+            quality = self._quality_workflow(store, debug, store.all_terms(), progress)
+            if quality is not None:
+                actual = [
+                    store.load_chapter(row["index"])
+                    for row in store.load_manifest().get("chapters", [])
+                ]
+                summary = quality.final_scores(actual, {}, scope="formal")
+                result = {**result, "quality": {**result.get("quality", {}), "formal": summary}}
+                debug.write_json("result.json", result)
+            # Turning the feature off preserves indexed publication without buying judgments.
+            index["quality_final_status"] = "completed" if quality is not None else "unavailable"
+            debug.write_json("autofix/index.json", index)
         self._save_usage_delta(store, debug, scope="review_autofix_publish")
         return self._publisher.finish(store, debug, index, result)

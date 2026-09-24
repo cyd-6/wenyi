@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useI18n } from "@/i18n";
-import { api, type ChapterSummary } from "@/lib/api";
+import { api, type ChapterSummary, type QualityUnit } from "@/lib/api";
 import { PageContainer, PageHeader } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ErrorNotice, StructuredData } from "@/components/ui/data";
 import { Disclosure } from "@/components/ui/disclosure";
+import { QualityUnitCard } from "../review/QualityPanel";
 import { ParagraphActions } from "./ParagraphActions";
 import { ParagraphEditor } from "./ParagraphEditor";
 
@@ -40,6 +41,35 @@ export function ChapterProofreading({
     queryFn: () => api.getReview(pid, index),
     enabled: validIndex,
     refetchInterval: 3000,
+  });
+  const runs = useQuery({
+    queryKey: ["review-runs", pid],
+    queryFn: () => api.listReviewRuns(pid),
+    enabled: validIndex,
+  });
+  const qualityRun = runs.data?.find(
+    (run) => Object.keys(run.quality || {}).length > 0,
+  );
+  const quality = useQuery({
+    queryKey: ["quality", pid, qualityRun?.id, "chapter", index],
+    enabled: validIndex && !!qualityRun,
+    queryFn: async () => {
+      const rows: QualityUnit[] = [];
+      let total = 1;
+      while (rows.length < total) {
+        const page = await api.getQuality(pid, qualityRun!.id, {
+          chapter: index,
+          offset: rows.length,
+          limit: 200,
+          view: "formal",
+        });
+        rows.push(...(page.items as QualityUnit[]));
+        total = page.total;
+        if (!page.items.length) break;
+      }
+      return rows;
+    },
+    refetchInterval: 5000,
   });
   const current = chapters.findIndex((c) => c.index === index);
   const previous = current > 0 ? chapters[current - 1] : undefined;
@@ -130,6 +160,21 @@ export function ChapterProofreading({
                   <p className="whitespace-pre-wrap leading-relaxed [overflow-wrap:anywhere]">
                     {segment.source}
                   </p>
+                  {qualityRun &&
+                    quality.data
+                      ?.filter(
+                        (unit) =>
+                          unit.members[0]?.segment_index === segment.index,
+                      )
+                      .map((unit) => (
+                        <QualityUnitCard
+                          key={unit.unit_id}
+                          pid={pid}
+                          rid={qualityRun.id}
+                          unit={unit}
+                          compact
+                        />
+                      ))}
                 </div>
                 <ParagraphActions
                   source={segment.source}

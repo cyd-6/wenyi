@@ -1,0 +1,60 @@
+# Experimental quality scoring. Keep off until a review run explicitly enables it.
+# Store credentials only in the DEEPSEEK_API_KEY and TYPESAFE_API_KEY environment variables.
+language:
+  source: en
+  target: zh
+
+llm:
+  preset: deepseek
+  providers:
+    quality_judge:
+      kind: typesafe
+      api_key_env: TYPESAFE_API_KEY
+      timeout: 120
+      max_retries: 2
+      max_concurrency: 2
+  models:
+    jev:
+      provider: quality_judge
+      model: jev-1.13.0
+  routes:
+    review.quality_score: {model: jev}
+    # Compare inherits the score route. All generation operations retain their
+    # existing translation/polish/strong routes; do not route them to Jev.
+  budget:
+    max_requests: 1000
+
+pipeline:
+  review: true
+  review_autofix: false
+  quality:
+    mode: "off"
+    rubric_version: quality-v1
+    max_candidates_per_unit: 2
+    max_context_expansions: 1
+    max_verifications_per_unit: 1
+    max_units_to_optimize_per_run: 100
+    max_generation_requests_per_run: 300
+    max_judge_requests_per_run: 10000
+    context:
+      preceding_units: 2
+      following_units: 1
+      max_estimated_input_tokens: 6000
+    thresholds:
+      adequacy_min: 75
+      coverage_min: 75
+      terminology_min: 75
+      reference_min: 75
+      fluency_min: 70
+      voice_min: 65
+      min_confidence_to_act: 0.70
+      min_pairwise_support: 0.75
+      min_dimension_improvement: 5
+      severe_tail_probability: 0.20
+    comparison:
+      swap_order: true
+      keep_original_on_tie: true
+    audit:
+      sample_rate: 0.05
+      seed: 42
+    on_error: continue_review

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from hashlib import sha256
 from typing import Any
 
 from ..review.conflicts import build_conflict_groups
@@ -51,6 +52,28 @@ def net_changes(
                 "review_result": str(active.get("status") or "provisional"),
             }
         )
+        provenance = [
+            {
+                key: patch[key]
+                for key in (
+                    "patch_id",
+                    "origin",
+                    "quality_unit_id",
+                    "quality_decision_ref",
+                    "before_hash",
+                    "after_hash",
+                    "member_refs",
+                    "blind_review_checked",
+                )
+                if key in patch
+            }
+            for patch in patch_records
+            if (patch.get("chapter"), patch.get("index")) == location
+            and patch.get("status") != "rejected_cycle"
+        ]
+        if any(item.get("quality_unit_id") for item in provenance):
+            changes[-1]["provenance"] = provenance
+            changes[-1]["formal_before_hash"] = sha256(baseline[location].encode()).hexdigest()
     return changes
 
 
@@ -258,6 +281,9 @@ def write_completed(debug: ReviewRunStore, state: ReviewSessionState, loaded) ->
         issues=public_issues,
         changes=changes,
     )
+    if state.quality:
+        result["quality"] = state.quality
+        debug.write_json("result.json", result)
     return result
 
 

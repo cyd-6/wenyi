@@ -17,6 +17,43 @@ if TYPE_CHECKING:
 ProgressFn = Callable[[int, int, str], None]
 
 
+def _conflicting_quality_groups(chapter, locations: list[dict[str, Any]]) -> set[str]:
+    """Preflight every member before changing any target in a logical paragraph."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in locations:
+        if isinstance(row.get("quality_unit_id"), str):
+            groups.setdefault(row["quality_unit_id"], []).append(row)
+    failed = set()
+    for unit_id, rows in groups.items():
+        expected = set(rows[0].get("member_refs", []))
+        actual = set()
+        for row in rows:
+            index = row.get("index")
+            if (
+                isinstance(index, bool)
+                or not isinstance(index, int)
+                or not 0 <= index < len(chapter.text_segments)
+            ):
+                failed.add(unit_id)
+                continue
+            segment = chapter.text_segments[index]
+            actual.add(f"ch{chapter.index}:text{index}:seg{segment.index}")
+            current = segment.target
+            before, target = row.get("before"), row.get("target")
+            if (
+                not isinstance(current, str)
+                or not isinstance(target, str)
+                or not (
+                    current == target
+                    or (current == before and text_hash(current) == row.get("before_hash"))
+                )
+            ):
+                failed.add(unit_id)
+        if expected != actual:
+            failed.add(unit_id)
+    return failed
+
+
 class AutofixPublisher:
     def __init__(self, annotations: AnnotationService, docx_styles: DocxStyleService):
         self._annotations = annotations
@@ -47,46 +84,53 @@ class AutofixPublisher:
         if progress and total:
             progress(0, total, "Publishing Review Autofix")
         for chapter_index in sorted(by_chapter):
-            chapter = store.load_chapter(chapter_index)
-            chapter_locations = sorted(
-                by_chapter[chapter_index], key=lambda row: row.get("index", -1)
-            )
-            applied_positions: list[int] = []
-            chapter_changed = False
-            for row in chapter_locations:
-                text_index = row.get("index")
-                target = row.get("target")
-                before = row.get("before")
-                if (
-                    isinstance(text_index, bool)
-                    or not isinstance(text_index, int)
-                    or not 0 <= text_index < len(chapter.text_segments)
-                    or not isinstance(target, str)
-                    or not isinstance(before, str)
-                ):
-                    row["status"] = "failed"
-                    row["reason"] = "invalid_index_location"
-                    done += 1
-                    continue
-                current = chapter.text_segments[text_index].target or ""
-                if current == target:
-                    row["status"] = "no_net_change" if current == before else "applied"
-                    if current != before and row.get("alignment_status") != "completed":
+            with store.state_lock():
+                chapter = store.load_chapter(chapter_index)
+                chapter_locations = sorted(
+                    by_chapter[chapter_index], key=lambda row: row.get("index", -1)
+                )
+                applied_positions: list[int] = []
+                chapter_changed = False
+                conflicting_groups = _conflicting_quality_groups(chapter, chapter_locations)
+                for row in chapter_locations:
+                    if row.get("quality_unit_id") in conflicting_groups:
+                        row["status"] = "failed"
+                        row["reason"] = "quality_unit_member_conflict"
+                        done += 1
+                        continue
+                    text_index = row.get("index")
+                    target = row.get("target")
+                    before = row.get("before")
+                    if (
+                        isinstance(text_index, bool)
+                        or not isinstance(text_index, int)
+                        or not 0 <= text_index < len(chapter.text_segments)
+                        or not isinstance(target, str)
+                        or not isinstance(before, str)
+                    ):
+                        row["status"] = "failed"
+                        row["reason"] = "invalid_index_location"
+                        done += 1
+                        continue
+                    current = chapter.text_segments[text_index].target or ""
+                    if current == target:
+                        row["status"] = "no_net_change" if current == before else "applied"
+                        if current != before and row.get("alignment_status") != "completed":
+                            applied_positions.append(text_index)
+                    elif current == before and text_hash(current) == row.get("before_hash"):
+                        chapter.text_segments[text_index].target = target
+                        row["status"] = "applied"
                         applied_positions.append(text_index)
-                elif current == before and text_hash(current) == row.get("before_hash"):
-                    chapter.text_segments[text_index].target = target
-                    row["status"] = "applied"
-                    applied_positions.append(text_index)
-                    chapter_changed = True
-                else:
-                    row["status"] = "failed"
-                    row["reason"] = "formal_target_changed"
-                    row["actual_hash"] = text_hash(current)
-                done += 1
-                if progress:
-                    progress(done, total, "Publishing Review Autofix")
-            if chapter_changed:
-                store.save_chapter(chapter)
+                        chapter_changed = True
+                    else:
+                        row["status"] = "failed"
+                        row["reason"] = "formal_target_changed"
+                        row["actual_hash"] = text_hash(current)
+                    done += 1
+                    if progress:
+                        progress(done, total, "Publishing Review Autofix")
+                if chapter_changed:
+                    store.save_chapter(chapter)
 
             # Post-translation alignment depends on target offsets; refresh it against final published text.
             for text_index in sorted(set(applied_positions)):

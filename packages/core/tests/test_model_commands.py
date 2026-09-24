@@ -33,7 +33,7 @@ def test_preview_needs_no_keys_or_sdk(tmp_path, monkeypatch):
     result = _invoke(tmp_path, {"llm": {"preset": "deepseek"}}, "list", "--json")
     assert result.exit_code == 0, result.output
     routes = json.loads(result.output)
-    assert len(routes) == 17
+    assert len(routes) == 21
     assert {route["model"] for route in routes.values()} == {"deepseek-flash"}
     assert routes["synopsis.chapter"]["max_output_tokens"] == 4096
     explained = _invoke(
@@ -123,3 +123,22 @@ def test_model_comparison_command_is_not_available(tmp_path):
     result = _invoke(tmp_path, {}, "compare")
     assert result.exit_code == 2
     assert "No such command 'compare'" in plain_text(result.output)
+
+
+@pytest.mark.parametrize("mode", ["observe", "optimize"])
+def test_quality_can_preview_and_check_economy_route_without_typesafe(tmp_path, monkeypatch, mode):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "offline-test-value")
+    monkeypatch.setattr("openai.OpenAI", lambda **kw: pytest.fail("local check constructed SDK"))
+    config = {
+        "llm": {"preset": "deepseek", "routes": {"review.quality_score": {"tier": "cheap"}}},
+        "pipeline": {"quality": {"mode": mode}},
+    }
+    checked = _invoke(tmp_path, config, "check", "--for", "review")
+    assert checked.exit_code == 0, checked.output
+    explained = _invoke(tmp_path, config, "explain", "--operation", "review.quality_score")
+    assert explained.exit_code == 0, explained.output
+    route = json.loads(explained.output)
+    assert route["tier"] == "cheap"
+    assert route["provider_kind"] == "deepseek"
+    assert route["judgment_source"] == "generated"

@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from .json_parser import parse_json_loose
+from .judgments import JudgmentRequest, JudgmentResult
 from .usage import UsageTracker
 
 Messages = list[dict[str, str]]
@@ -95,3 +96,18 @@ class LLMClient(ABC):
         """Request and parse JSON output."""
         text = self.complete(messages, operation=operation, json_mode=True, max_tokens=max_tokens)
         return parse_json_loose(text)
+
+    def evaluate(self, request: JudgmentRequest, *, operation: str) -> JudgmentResult:
+        """Evaluate a native judgment without changing existing text-only test clients."""
+        raise NotImplementedError("This client does not support native judgment evaluation")
+
+    def inference_fingerprint(self, operation: str) -> str:
+        """Expose one operation's inference identity for persisted judgment caches."""
+        from .operations import require_operation
+        from .routing import identity, inference_snapshot
+
+        require_operation(operation)
+        config = getattr(self, "config", None)
+        if config is not None:
+            return identity(inference_snapshot(config, (operation,)))
+        return identity({"operation": operation, "client": type(self).__qualname__})

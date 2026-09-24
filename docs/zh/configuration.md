@@ -118,6 +118,7 @@ llm:
 | `openrouter` | OpenRouter 端点；`OPENROUTER_API_KEY` | `thinking`、`reasoning_effort`、`extra_body` |
 | `opencode-go` | OpenCode Go 网关（`https://opencode.ai/zen/go/v1`）；`OPENCODE_API_KEY`。会发送 `User-Agent: wenyi` 与连接级稳定的 `x-opencode-session`。无内置 preset，需自行配置模型 | `thinking`、`reasoning_effort`、`extra_body` |
 | `gemini` | 原生 Gemini API；未指定自定义变量时，从 `GEMINI_API_KEY` 回退到 `GOOGLE_API_KEY` | `thinking_level` 或 `thinking_budget`、`temperature`、`extra_body` |
+| `typesafe` | 原生 System One API（`https://api.typesafe.ai/v1`）；`TYPESAFE_API_KEY`；仅支持 judgment | 无生成参数或 `max_output_tokens`；使用固定 `jev-1.13.0` |
 | `openai-compatible` | 必填 `base_url`；可选 `api_key_env`；`reasoning_style` | `thinking`、`reasoning_effort`、`json_response_fallback`、`request_overrides` |
 | `orcarouter` | `https://api.orcarouter.ai/v1`；`ORCAROUTER_API_KEY`；`reasoning_style` | 同 `openai-compatible` |
 | `ollama`、`vllm` | `http://localhost:11434/v1`、`http://localhost:8000/v1`；可选密钥；`reasoning_style` | 同 `openai-compatible` |
@@ -147,6 +148,12 @@ DeepSeek 的 `reasoning_effort` 可设为 `low`、`high` 或 `max`；`thinking: 
 | `review.verify` | `strong` | 取证核查 |
 | `review.arbitrate` | `strong` | 冲突仲裁 |
 | `review.fix` | `strong` | 影子修订 |
+| `review.quality_score` | 显式模型或档位路由 | 实验性逻辑段落评分 |
+| `review.quality_compare` | `review.quality_score` | 候选盲比较；仅 optimize |
+| `review.quality_diagnose` | `strong` | 核实疑点；仅 optimize |
+| `review.quality_retranslate` | `translation.body` | 独立重译候选；仅 optimize |
+| `review.quality_revise` | `polish.body` | 定向修订候选；仅 optimize |
+| `review.quality_verify` | `strong` | 独立不确定性核查；仅 optimize |
 | `autofix.verify` | `review.verify` | 发布前取证核查 |
 | `autofix.fix` | `review.fix` | 正式发布修订 |
 | `srt.translate` | `strong` | 字幕批次与单条恢复 |
@@ -270,6 +277,56 @@ pipeline:
 issues 复用同一套 Agent Loop 和 Fixer，不会另建一套 Autofix loop 或 prompt。
 统一结果和内部逐轮记录会保存到 `state/<书名>/targets/<目标语言>/reviews/review-<时间戳>/`。
 本次 Review 用量既保存为目录内增量，也会计入本书累计用量。
+
+## 实验性段落质量
+
+`pipeline.quality.mode` 支持 `off`（默认）、`observe` 和 `optimize`。`observe` 新增评分，
+不由质量层产生文字修改；原有 Review/Autofix 仍按各自开关运行，需保留正式文本时使用
+`--no-autofix`。`optimize` 增加有限候选和盲比较，保留原有全书 Review 与发布流程。
+SRT 不使用该层。
+
+```yaml
+llm:
+  preset: deepseek
+  routes:
+    review.quality_score: {tier: cheap}
+pipeline:
+  review_autofix: false
+  quality:
+    mode: "off"
+    max_candidates_per_unit: 2
+    max_units_to_optimize_per_run: 100
+    max_generation_requests_per_run: 300
+    max_judge_requests_per_run: 10000
+    on_error: continue_review
+```
+
+质量判断操作可以使用原生 judge，也可以通过 JSON 判断适配器使用已有生成模型。上述
+示例仅使用 DeepSeek preset 和 `DEEPSEEK_API_KEY`，无需 Jev 账户或 `TYPESAFE_API_KEY`。
+评分路由必须显式配置，比较默认继承；生成操作及其 fallback 仍不能使用仅支持 judgment
+的 Jev 提供商。质量 `off` 不要求判断凭证，也不改变旧 Review 的推理身份；`observe`
+不将仅 optimize 使用的操作纳入必需凭证或推理身份。
+
+生成模型输出的分数、概率权重和 confidence 是自报值，不是 Jev 原生输出、校准概率分布
+或实测翻译准确率。`cheap` 是路由档位名，并非价格保证。
+[完整 DeepSeek 示例](../../examples/quality-deepseek.yaml) 使用单独的 `quality_json`
+profile，关闭 thinking 并设置 4096-token 输出上限，保留翻译和 strong 档的原有参数。
+实际成本和两种方式的质量差异尚未测量。
+
+从显式 Jev 路由迁移时，同时检查 `review.quality_compare`：已有的显式覆盖不会因评分
+路由改变而自动消失，应同步改为生成模型或删除覆盖以继承评分，否则仍需要 Jev 密钥。
+评分/比较即使通过生成 API 请求，也记入质量 judge 额度；内容候选 generation 额度
+不因此增加。所有调用仍受同一全局预算约束。
+
+所有阈值均为未校准实验初值。质量预算统计局部调用，提供商的有限共享重试可能增加 HTTP
+尝试数；全局 `llm.budget.max_requests` 同时约束重试及其它流程调用。
+`on_error: continue_review` 显示质量 degraded 并恢复原有 Review 行为；`stop` 保留可恢复
+中断。二者均不能越过已有 Autofix 开关授予发布权限。
+
+完整字段、范围、评分语义、命令及评估限制见[段落质量](quality.md)。
+[原生 Jev 示例](../../examples/quality.yaml)和
+[DeepSeek JSON 示例](../../examples/quality-deepseek.yaml)包含上下文、阈值、比较及抽检默认值。
+Web 全局/项目设置保留相同质量字段；提供商和模型注册仍由全局设置管理。
 
 ## 输出
 

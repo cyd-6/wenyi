@@ -38,7 +38,17 @@ async def start_job(pid: str, kind: str, *, params: dict | None = None) -> dict:
             raise HTTPException(409, "upload a source file first")
         run_id = uuid4().hex
         try:
-            snapshot = config_document(effective_config(project))
+            config = effective_config(project)
+            if params.get("quality_mode") is not None:
+                config.pipeline.quality.mode = params["quality_mode"]
+            if params.get("autofix") is not None:
+                config.pipeline.review_autofix = params["autofix"]
+            if config.pipeline.quality.mode != "off":
+                if kind == "chapter_translation":
+                    raise ValueError("Whole-book quality cannot run on a single chapter")
+                if kind == "translation" and not config.pipeline.review:
+                    raise ValueError("Quality requires whole-book review; enable pipeline.review")
+            snapshot = config_document(config)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
         db_id = dal.create_job(

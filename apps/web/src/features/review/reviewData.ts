@@ -10,6 +10,12 @@ export const itemStatuses = {
 } as const;
 
 const phases: [RegExp, MessageKey][] = [
+  [/^quality[ _]scor/i, "quality.phaseScore"],
+  [/^quality[ _](candidate|generat)/i, "quality.phaseGenerate"],
+  [/^quality[ _]compar/i, "quality.phaseCompare"],
+  [/^quality[ _]final/i, "quality.phaseFinal"],
+  [/^quality_overlay_committing$/, "quality.phaseCommit"],
+  [/^quality_done$/, "quality.phaseDone"],
   [/^Loading review chapters/, "review.phaseLoading"],
   [/^Restoring review checkpoint/, "review.phaseRestoring"],
   [/^Preparing review R(\d+)/, "review.phasePreparing"],

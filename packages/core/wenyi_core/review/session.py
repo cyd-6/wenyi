@@ -119,6 +119,7 @@ class ReviewSessionState:
     clean_streak: int = 0
     fix_rounds: int = 0
     termination: str = "not_started"
+    quality: dict[str, Any] = field(default_factory=dict)
 
     def register_blocked(
         self,
@@ -197,6 +198,11 @@ class ReviewSessionState:
         for patch_record in self.active_patches.values():
             if patch_record.get("round", review_round) >= review_round:
                 continue
+            if patch_record.get("origin", "").startswith("quality_"):
+                # A blind scan is evidence about the shadow, not proof that an
+                # invented issue was resolved. Quality patches have no issue key.
+                patch_record["blind_review_checked"] = review_round
+                continue
             covered_issue_keys = {
                 str(issue_key)
                 for issue_key in patch_record.get("issue_keys", [])
@@ -259,6 +265,42 @@ class ReviewSessionState:
         round_summary["patch_count"] = 0
         round_summary["termination"] = self.termination
         return ReviewDecision("stop", round_summary, clean_progress)
+
+    def apply_quality_patches(self, chapters, patches: list[dict[str, Any]]) -> None:
+        """Replay persisted decisions atomically by logical unit without consuming fix rounds."""
+        baseline = {
+            (chapter.index, index): segment.target
+            for chapter in chapters
+            for index, segment in enumerate(chapter.text_segments)
+        }
+        existing = {patch.get("patch_id") for patch in self.patch_records}
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for patch in patches:
+            grouped.setdefault(patch["quality_unit_id"], []).append(patch)
+        for group in grouped.values():
+            if all(patch.get("patch_id") in existing for patch in group):
+                continue
+            for patch in group:
+                location = (patch["chapter"], patch["index"])
+                current = self.target_overrides.get(location, baseline.get(location))
+                if (
+                    current is None
+                    or hashlib.sha256(current.encode()).hexdigest() != patch["before_hash"]
+                ):
+                    raise ValueError("Quality shadow base changed; restore the review checkpoint.")
+            for patch in group:
+                record = {
+                    "round": 0,
+                    "issue_ids": [],
+                    "issue_keys": [],
+                    **patch,
+                    "status": "accepted_by_comparison",
+                }
+                location = (record["chapter"], record["index"])
+                self.patch_records.append(record)
+                self.active_patches[location] = record
+                self.target_overrides[location] = record["after"]
+        self.seen_overlays.add(review_overlay_digest(chapters, self.target_overrides))
 
     def prepare_fix(
         self,

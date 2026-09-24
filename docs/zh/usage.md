@@ -38,6 +38,33 @@ uv run wenyi models check --for translate
 
 这些命令只做本地预览与密钥检查，不发送请求。三个档位仍可作为默认入口；在 `llm.routes` 中独立配置操作即可混用模型。旧配置与用量账本的显式转换及预算设置见[配置说明](configuration.md#模型与操作路由)。
 
+## 段落质量评分（实验性）
+
+已有 DeepSeek 凭证即可运行质量评分，无需 Jev API。将 `DEEPSEEK_API_KEY` 放入环境，
+使用[DeepSeek JSON 示例](../../examples/quality-deepseek.yaml)，并将示例语言方向改为该
+书籍保存的方向。示例默认关闭质量与发布，命令再显式开启模式。它使用独立的判断 profile，
+保留翻译和 strong 档配置；原有生成模型继续负责 Review 与候选生成。原生 Jev 仍可按
+[段落质量说明](quality.md)选用，此时才需要 TypeSafe 连接与 `TYPESAFE_API_KEY`。
+
+生成模型自报的概率和 confidence 不是 Jev 原生信号、校准分布或正确率；没有真实评估
+证明两种方案质量等价或节省了多少费用。下面命令会调用 DeepSeek，仍可能产生费用。
+
+```bash
+uv run wenyi --config examples/quality-deepseek.yaml review book.epub --quality-mode observe --no-autofix
+uv run wenyi --config examples/quality-deepseek.yaml review book.epub --quality-mode optimize --no-autofix
+uv run wenyi --config examples/quality-deepseek.yaml review book.epub --quality-mode optimize --autofix
+uv run wenyi --config examples/quality-deepseek.yaml translate book.epub --quality-mode optimize --review
+```
+
+`observe` 仅禁止新增质量层修改文字，原有 Review/Fixer/Autofix 仍按配置运行。需要正式文本
+不变时使用 `--no-autofix`。Optimize 可以生成并比较候选、保存通过的影子修改而不发布；
+显式 `--autofix` 允许既有发布器在审校和比较后应用符合条件的修改。
+
+质量流程要求全书已经翻译完成，不适用于 SRT。
+`translate --no-review --quality-mode optimize` 会报告冲突。分数和 confidence 都是尚未
+校准的信号，不代表翻译准确率。Web 设置、审校和校对提供相同模式及正式/影子、stale
+状态。预算、故障行为、恢复和离线/显式付费评估命令见[质量配置与限制](quality.md)。
+
 ## 多语言互译（实验性）
 
 先运行 `uv run wenyi languages` 查看内置语言。将以下片段写入自己的配置文件（模型配置沿用已有设置），即可直接中译英：

@@ -22,10 +22,12 @@ flowchart TD
         IB --> J[Persist the final chapter]
     end
 
-    J --> K[Optional parallel whole-book review<br/>Using the completed glossary]
+    J --> QA[Optional paragraph quality<br/>Score; optimize may propose compared shadow candidates]
+    QA --> K[Optional parallel whole-book review<br/>Using the completed glossary]
     K --> N{Confirmed issues and<br/>Fix budget remaining?}
     N -- Yes --> O[Generate provisional shadow fixes<br/>From one immutable snapshot]
-    O --> K
+    O --> QG[Quality comparison gate when optimize is enabled]
+    QG --> K
     N -- No or stopped --> P[Save Review issues<br/>and folded changes]
     P --> Q{Autofix enabled?}
     Q -- Yes --> R[Overlay changes; reuse Agent Loop and Fixer<br/>Publish final segment targets]
@@ -39,6 +41,36 @@ The Review Fixer receives the same style brief, book synopsis, chapter digest,
 relevant glossary subset, and nearby source/translation context used to preserve
 the book's voice. Its normal Review-loop replacements remain temporary; the
 optional Autofix publisher can later reuse it to produce formal segment targets.
+
+## Optional paragraph quality before Review
+
+When `pipeline.quality.mode` is `observe` or `optimize`, Review first builds logical
+paragraphs from stable segment identities and continuation groups. Observe records
+six-dimensional scores and routing suggestions without quality edits, using the
+configured generation-model JSON judge or native Jev. Generated probabilities
+and confidence are self-reported; they do not have native Jev semantics and are
+not calibrated accuracy estimates.
+Optimize scores the complete book first, persists the risk-ranked selection,
+generates at most two content alternatives per selected unit, and compares each
+against its original using fixed evidence and swapped blind labels by default.
+Critical regressions and unsupported or tied comparisons retain the original.
+Combined edits also receive neighboring-context checks before the shadow advances.
+
+The existing whole-book Review remains mandatory for this path. Its Fixer and
+Autofix's final issue repairs use the same comparison gate in optimize mode.
+Quality patches carry their own provenance rather than invented issue IDs.
+The shadow checkpoint, cached responses and usage journal support resume; the
+publisher still writes its recoverable index before any formal target changes.
+Multi-part logical units are checked and published together at the chapter boundary.
+Formal and shadow terminal scores use separate text/context fingerprints; manual
+edits make stored results stale without issuing background model requests.
+
+Quality is off by default and excluded from subtitle processing. Observe leaves
+ordinary Review/Autofix permissions intact; use `--no-autofix` for formal read-only
+execution. `continue_review` explicitly reports degraded quality when falling
+back to the existing flow. Thresholds and model confidence are uncalibrated.
+See [paragraph quality](quality.md) for setup, budgets, failure semantics and the
+offline/explicit-paid evaluation tool.
 
 ## Language rules and state scope
 
@@ -76,9 +108,10 @@ The glossary constrains later translation and supplies evidence to the final rev
 - **Cross-chunk arbitration:** after all concurrent chunks finish, contradictory consistency proposals for the same term, pronoun, or fixed expression can be sent through a final arbiter. The final suggestion set conservatively rewrites every losing proposal to the winning value; every superseded proposal remains available in the round traces. It never changes the glossary or translated text.
 - **Shadow Fix and blind re-review:** confirmed issues for the same segment are grouped into one Fixer request. The Fixer receives the style brief, book synopsis, chapter digest, relevant glossary subset, and nearby source/translation pairs, and must return one complete replacement segment rather than a diff. All Fixers in a round read one immutable shadow snapshot; their patches are applied together only after the round finishes. The next whole-book Review and evidence index read the updated shadow text without receiving the old issue explanations. Unresolved arbitration conflicts and unverified Agent fallbacks are left unresolved. The loop stops after consecutive clean passes, the configured Fix limit, no progress, or an A→B→A cycle.
 - **Optional Autofix publishing:** the Review engine itself remains read-only. When `review_autofix` is enabled, a separate publisher first overlays the folded `changes`, then sends final unresolved issues through the existing Review Agent Loop against that updated translation. Confirmed issues reuse the existing Fixer; no Autofix-specific loop or prompt exists. The publisher writes only final complete segments to formal `target` values, then refreshes annotation and DOCX style offsets.
-Final review is the sole model-driven semantic review stage and is enabled by
-default. Setting `pipeline.review: false` or passing `--no-review` skips it in the
-one-command workflow. Review is also available as an independent stage:
+Whole-book Review remains enabled by default, including when the optional
+paragraph quality stage is active. Setting `pipeline.review: false` or passing `--no-review` skips it in the
+one-command workflow; enabling quality while skipping Review is a conflict.
+Review is also available as an independent stage:
 
 ```bash
 uv run wenyi review book.epub

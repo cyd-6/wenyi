@@ -44,6 +44,7 @@ class PipelineRuntime:
         self._timer: RunTimer | None = None
         # Client usage is cumulative in-process; checkpoints isolate newly accrued usage at each flush.
         self._usage_checkpoint = self.client.usage_summary()
+        self._pending_usage_checkpoint: tuple[dict[str, Any], dict[str, Any]] | None = None
         self.analyzer = Analyzer(self.client, config)
         self.synopsizer = Synopsizer(self.client, config)
         self.translator = Translator(self.client, config)
@@ -103,25 +104,52 @@ class PipelineRuntime:
         target = (self.config.target_lang or "").lower().replace("_", "-")
         return self.config.output.punctuation_normalize and require_language(target) == "zh"
 
-    def flush_usage(self, store: Storage, *, scope: str, review=None) -> dict[str, Any]:
+    def flush_usage(
+        self,
+        store: Storage,
+        *,
+        scope: str,
+        review=None,
+        artifacts: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Merge the client's unpersisted usage delta into the book's usage.json."""
+        if self._pending_usage_checkpoint is not None:
+            checkpoint, expected = self._pending_usage_checkpoint
+            pending = store.read_artifact("usage-pending.json")
+            prepared = (
+                {entry["path"]: entry["value"] for entry in pending.get("entries", [])}
+                if isinstance(pending, dict)
+                else {}
+            )
+            if prepared == expected or all(
+                store.read_artifact(key) == value for key, value in expected.items()
+            ):
+                # A signal may arrive after the durable prepare but before its
+                # return. Acknowledge exactly that client delta before replay.
+                self._usage_checkpoint = checkpoint
         store.recover_usage()
+        self._pending_usage_checkpoint = None
         current = self.client.usage_summary()
         increment = usage_delta(current, self._usage_checkpoint)
         accumulated = store.load_usage() or empty_usage()
         if not increment["totals"]["calls"]:
             if review is not None and review.load_usage() is None:
                 review.save_usage(empty_usage())
+            if artifacts:
+                store.prepare_usage_commit(artifacts)
+                store.recover_usage()
             return merge_usage_summaries(accumulated, increment)
         cumulative = merge_usage_summaries(accumulated, increment)
-        ledgers = {"usage.json": cumulative}
+        ledgers = {"usage.json": cumulative, **(artifacts or {})}
         if review is not None:
             ledgers[f"reviews/{review.review_id}/usage.json"] = merge_usage_summaries(
                 review.load_usage() or empty_usage(), increment
             )
+        self._pending_usage_checkpoint = (current, ledgers)
         store.prepare_usage_commit(ledgers)
         self._usage_checkpoint = current
         store.recover_usage()
+        self._pending_usage_checkpoint = None
         store.log_event(
             "usage_summary",
             scope=scope,

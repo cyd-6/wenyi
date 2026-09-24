@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from enum import Enum
 
 import typer
 from rich.progress import Progress
@@ -20,6 +21,12 @@ from .validation import (
 )
 
 
+class QualityMode(str, Enum):
+    off = "off"
+    observe = "observe"
+    optimize = "optimize"
+
+
 def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> None:
     def _translate_impl(
         input_path: str,
@@ -30,6 +37,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
         pdf_engine: str = "weasyprint",
         polish: bool | None = None,
         review: bool | None = None,
+        quality_mode: QualityMode | None = None,
         mono: bool | None = None,
         bilingual: bool | None = None,
     ) -> None:
@@ -44,6 +52,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
                 pdf_engine=pdf_engine,
                 polish=polish,
                 review=review,
+                quality_mode=quality_mode,
                 mono=mono,
                 bilingual=bilingual,
             )
@@ -61,6 +70,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
         out: str | None = None,
         polish: bool | None = None,
         review: bool | None = None,
+        quality_mode: QualityMode | None = None,
         mono: bool | None = None,
         bilingual: bool | None = None,
     ) -> None:
@@ -70,6 +80,8 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
 
         if chapter is not None:
             raise ValueError("SRT translation does not support --chapter")
+        if quality_mode not in {None, QualityMode.off}:
+            raise ValueError("SRT translation does not support --quality-mode")
         ignored: list[str] = []
         if fmt != "epub":
             ignored.append("--format")
@@ -122,6 +134,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
         pdf_engine: str = "weasyprint",
         polish: bool | None = None,
         review: bool | None = None,
+        quality_mode: QualityMode | None = None,
         mono: bool | None = None,
         bilingual: bool | None = None,
     ) -> None:
@@ -137,6 +150,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
                 out=out,
                 polish=polish,
                 review=review,
+                quality_mode=quality_mode,
                 mono=mono,
                 bilingual=bilingual,
             )
@@ -149,6 +163,15 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
             config.pipeline.polish = polish
         if review is not None:
             config.pipeline.review = review
+        if quality_mode is not None:
+            config.pipeline.quality.mode = quality_mode.value
+        if config.pipeline.quality.mode != "off":
+            if chapter is not None:
+                raise ValueError("--chapter cannot run whole-book quality; use --quality-mode off")
+            if not config.pipeline.review:
+                raise ValueError(
+                    "Quality requires whole-book review; use --review or --quality-mode off"
+                )
         if mono is not None:
             config.output.mono = mono
         if bilingual is not None:
@@ -295,6 +318,11 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
             "--review/--no-review",
             help="Override pipeline.review to enable or disable final whole-book review",
         ),
+        quality_mode: QualityMode | None = typer.Option(
+            None,
+            "--quality-mode",
+            help="Experimental paragraph quality: off / observe / optimize; thresholds are uncalibrated",
+        ),
         mono: bool | None = typer.Option(
             None,
             "--mono/--no-mono",
@@ -315,6 +343,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
             pdf_engine=pdf_engine,
             polish=polish,
             review=review,
+            quality_mode=quality_mode,
             mono=mono,
             bilingual=bilingual,
         )
@@ -332,6 +361,11 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
     @app.command(rich_help_panel="Quality checks")
     def review(
         input: str = typer.Argument(..., help="Source file whose entire body has been translated"),
+        quality_mode: QualityMode | None = typer.Option(
+            None,
+            "--quality-mode",
+            help="Experimental paragraph quality: off / observe / optimize; use --no-autofix to keep formal text",
+        ),
         autofix: bool | None = typer.Option(
             None,
             "--autofix/--no-autofix",
@@ -346,6 +380,8 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
             config = context().load_config()
             if autofix is not None:
                 config.pipeline.review_autofix = autofix
+            if quality_mode is not None:
+                config.pipeline.quality.mode = quality_mode.value
             context().validate_api_configuration(config, "review")
             require_input_file(input, console=console)
             orch = Orchestrator(config)

@@ -43,6 +43,8 @@ export function ParagraphEditor({
     Promise.all([
       qc.invalidateQueries({ queryKey: ["review", pid, chapterIndex] }),
       qc.invalidateQueries({ queryKey: ["chapters", pid] }),
+      qc.invalidateQueries({ queryKey: ["quality", pid] }),
+      qc.invalidateQueries({ queryKey: ["quality-detail", pid] }),
       qc.invalidateQueries({
         queryKey: ["segmentHistory", pid, chapterIndex, segment.index],
       }),

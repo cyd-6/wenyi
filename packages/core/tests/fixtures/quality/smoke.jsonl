@@ -1,0 +1,2 @@
+{"id":"weather-1","book_id":"authored-weather","source":"Unless the rain stopped, she would not leave.","target":"除非雨停了，否则她不会离开。","budget_control":"除非雨停，否则她不会离开。","genre":"narrative","labels":{"category":"condition"},"split":"evaluation"}
+{"id":"dialogue-1","book_id":"authored-dialogue","source":"Fine. Just fine, he said, staring at the broken cup.","target":"好。真是好极了，他盯着碎掉的杯子说道。","budget_control":"好啊，真好。他盯着摔碎的杯子说。","genre":"dialogue","labels":{"category":"irony"},"split":"evaluation"}

@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any
 
 from .configuration import LLMConfig
+from .generated_judgments import DEFAULT_OUTPUT_TOKENS, prompt_identity
 from .operations import OPERATIONS, require_operation
 from .registry import provider_spec
 from .transport import ResolvedModel
@@ -51,7 +52,20 @@ class ResolvedRoute:
     def describe(self) -> dict[str, Any]:
         result = asdict(self)
         result["options"] = json.loads(result.pop("options_json"))
+        result["capability"] = require_operation(self.operation).capability
+        if result["capability"] == "judgment":
+            result["judgment_source"] = self.judgment_source
         return result
+
+    @property
+    def judgment_source(self) -> str | None:
+        if require_operation(self.operation).capability != "judgment":
+            return None
+        return (
+            "native"
+            if "judgment" in provider_spec(self.provider_kind).capabilities
+            else "generated"
+        )
 
 
 def model_route(
@@ -68,13 +82,20 @@ def model_route(
     model = config.models[profile]
     connection = config.providers[model.provider]
     provider = provider_spec(connection.kind)
+    if spec.capability not in provider.effective_capabilities:
+        raise ValueError(
+            f"{operation}: requires {spec.capability}; provider {connection.kind!r} "
+            f"supports {', '.join(provider.effective_capabilities)}"
+        )
     adapter = provider.adapter_type()
     options = provider.validate_model(model)
     if output_hint is not None and output_hint <= 0:
         raise ValueError("max_tokens must be positive")
-    limit = adapter.output_limit(
-        options, output_hint or spec.output_tokens, model.max_output_tokens
-    )
+    generated_judgment = spec.capability == "judgment" and "judgment" not in provider.capabilities
+    hint = output_hint or spec.output_tokens
+    if generated_judgment and hint is None:
+        hint = DEFAULT_OUTPUT_TOKENS
+    limit = adapter.output_limit(options, hint, model.max_output_tokens)
     endpoint = connection.base_url or adapter.default_base_url
     connection_options = adapter.connection_options.model_validate(connection.model_extra or {})
     physical_provider = {
@@ -89,6 +110,8 @@ def model_route(
         "max_output_tokens": limit,
         "connection_options": connection_options.model_dump(mode="json"),
     }
+    if generated_judgment:
+        physical_model["judgment_bridge"] = prompt_identity()
     return ResolvedRoute(
         operation,
         origin,
@@ -113,7 +136,7 @@ def resolve_routes(config: LLMConfig) -> Mapping[str, ResolvedRoute]:
     """Compile all registered routes without credentials, SDK construction or network I/O."""
     resolved: dict[str, ResolvedRoute] = {}
 
-    def resolve(operation: str) -> ResolvedRoute:
+    def resolve(operation: str) -> ResolvedRoute | None:
         if operation in resolved:
             return resolved[operation]
         spec = require_operation(operation)
@@ -125,8 +148,12 @@ def resolve_routes(config: LLMConfig) -> Mapping[str, ResolvedRoute]:
             fallbacks = tuple(route.fallbacks)
         elif spec.inherits:
             parent = resolve(spec.inherits)
+            if parent is None:
+                return None
             tier, profile, fallbacks = parent.tier, parent.profile, parent.fallbacks
             origin = f"inherits {spec.inherits}"
+        elif spec.requires_explicit_route:
+            return None
         else:
             tier = spec.tier
             profile = config.tiers[tier or "strong"]
@@ -139,6 +166,8 @@ def resolve_routes(config: LLMConfig) -> Mapping[str, ResolvedRoute]:
         result = model_route(
             config, operation, profile, origin=origin, tier=tier, fallbacks=fallbacks
         )
+        for fallback in fallbacks:
+            model_route(config, operation, fallback, origin="fallback")
         resolved[operation] = result
         return result
 
@@ -149,6 +178,14 @@ def resolve_routes(config: LLMConfig) -> Mapping[str, ResolvedRoute]:
 
 def inference_snapshot(config: LLMConfig, operations: Iterable[str]) -> dict[str, Any]:
     routes = resolve_routes(config)
+    operations = tuple(operations)
+    for operation in operations:
+        require_operation(operation)
+        if operation not in routes:
+            raise ValueError(
+                f"{operation}: requires an explicit llm.routes.review.quality_score "
+                "route to a generation model or a native judgment model"
+            )
     return {
         operation: {
             "primary": routes[operation].fingerprint,

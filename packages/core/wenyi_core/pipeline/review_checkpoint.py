@@ -80,6 +80,7 @@ class ReviewCheckpoint:
             state.round_summaries = _checkpoint.get("round_summaries", [])
             state.clean_streak = _checkpoint.get("clean_streak", 0)
             state.fix_rounds = _checkpoint.get("fix_rounds", 0)
+            state.quality = _checkpoint.get("quality", {})
             # Restore the within-round phase; scan_done allows skipping the completed scan.
             if _checkpoint.get("phase") == "scan_done":
                 start_round = _checkpoint.get("next_round", 1)
@@ -157,6 +158,8 @@ class ReviewCheckpoint:
             payload["latest_conflict_groups"] = latest.conflict_groups
             payload["latest_residual_conflicts"] = latest.residual_conflicts
             payload["latest_fallback_agent_count"] = latest.fallback_agent_count
+        if state.quality:
+            payload["quality"] = state.quality
         self._store.save_checkpoint(payload)
 
 

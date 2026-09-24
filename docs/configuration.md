@@ -129,6 +129,7 @@ Replace `YOUR_EDITOR_MODEL` with a model supported by your endpoint. Other opera
 | `openrouter` | OpenRouter endpoint; `OPENROUTER_API_KEY` | `thinking`, `reasoning_effort`, `extra_body` |
 | `opencode-go` | OpenCode Go gateway (`https://opencode.ai/zen/go/v1`); `OPENCODE_API_KEY`. Sends `User-Agent: wenyi` and a stable per-connection `x-opencode-session`. No built-in preset — configure models explicitly | `thinking`, `reasoning_effort`, `extra_body` |
 | `gemini` | Native Gemini API; `GEMINI_API_KEY`, falling back to `GOOGLE_API_KEY` when no custom variable is set | `thinking_level` or `thinking_budget`, `temperature`, `extra_body` |
+| `typesafe` | Native System One API (`https://api.typesafe.ai/v1`); `TYPESAFE_API_KEY`; judgment capability only | No generation options or `max_output_tokens`; use fixed `jev-1.13.0` |
 | `openai-compatible` | Explicit `base_url`; optional `api_key_env`; `reasoning_style` | `thinking`, `reasoning_effort`, `json_response_fallback`, `request_overrides` |
 | `orcarouter` | `https://api.orcarouter.ai/v1`; `ORCAROUTER_API_KEY`; `reasoning_style` | Same as `openai-compatible` |
 | `ollama`, `vllm` | `http://localhost:11434/v1`, `http://localhost:8000/v1`; optional credentials; `reasoning_style` | Same as `openai-compatible` |
@@ -158,6 +159,12 @@ DeepSeek accepts `reasoning_effort: low`, `high`, or `max`; `thinking: false` ex
 | `review.verify` | `strong` | Evidence verification |
 | `review.arbitrate` | `strong` | Conflict arbitration |
 | `review.fix` | `strong` | Shadow revision |
+| `review.quality_score` | Explicit model or tier route | Experimental logical-paragraph scoring |
+| `review.quality_compare` | `review.quality_score` | Blind candidate comparison; optimize only |
+| `review.quality_diagnose` | `strong` | Confirm suspected problems; optimize only |
+| `review.quality_retranslate` | `translation.body` | Independent candidates; optimize only |
+| `review.quality_revise` | `polish.body` | Directed candidates; optimize only |
+| `review.quality_verify` | `strong` | Independent uncertainty checks; optimize only |
 | `autofix.verify` | `review.verify` | Publication evidence verification |
 | `autofix.fix` | `review.fix` | Publication revision |
 | `srt.translate` | `strong` | Subtitle batches and single-cue recovery |
@@ -284,6 +291,68 @@ Loop and Fixer for final unresolved issues; there is no separate Autofix loop or
 prompt. The consolidated result and internal round records are written under
 `state/<book>/targets/<target-language>/reviews/review-<timestamp>/`. Review usage is stored both as the
 run-local delta and in the book's cumulative usage totals.
+
+## Experimental paragraph quality
+
+`pipeline.quality.mode` accepts `off` (default), `observe`, or `optimize`.
+`observe` adds scores without quality-generated changes; existing Review/Autofix
+still run according to their own switches. Use `--no-autofix` to preserve formal
+text. `optimize` adds bounded candidates and blind comparison, then keeps the
+existing whole-book Review and publication flow. SRT does not use this layer.
+
+```yaml
+llm:
+  preset: deepseek
+  routes:
+    review.quality_score: {tier: cheap}
+pipeline:
+  review_autofix: false
+  quality:
+    mode: "off"
+    max_candidates_per_unit: 2
+    max_units_to_optimize_per_run: 100
+    max_generation_requests_per_run: 300
+    max_judge_requests_per_run: 10000
+    on_error: continue_review
+```
+
+Quality judgment operations accept a native judge or an existing generation model
+through the JSON judgment adapter. The example uses only the DeepSeek preset and
+`DEEPSEEK_API_KEY`; no Jev account or `TYPESAFE_API_KEY` is needed. The score route
+must be explicit; compare inherits it unless overridden. A generation route may
+still not use the judgment-only Jev provider, including as a fallback. Quality
+`off` needs no judgment credentials and does not alter existing Review inference
+identity; `observe` excludes optimize-only routes from required credentials and
+inference identity.
+
+Generation-based judgments report their own scores, probability weights and
+confidence. These values are not native Jev outputs, calibrated probability
+distributions or measured translation accuracy. `cheap` names a routing tier,
+not a price guarantee. The complete
+[DeepSeek example](../examples/quality-deepseek.yaml) uses a separate
+`quality_json` profile with thinking disabled and a 4096-token output cap, leaving
+translation and strong-tier profiles unchanged. Costs and comparative quality
+have not been measured.
+
+When migrating explicit Jev routes, also check `review.quality_compare`. Change
+its override or remove it to inherit score; changing score alone leaves an
+explicit Jev comparison route and its key requirement intact. Scoring/comparison
+calls through a generation API count against the quality judge allowance, not
+the content-candidate generation allowance. All calls still use the global budget.
+
+Every threshold is an uncalibrated experimental default. Quality budgets count
+local calls; bounded shared provider retries can add HTTP attempts. Global
+`llm.budget.max_requests` also limits retries and all ordinary workflow calls.
+`on_error: continue_review` reports degraded quality and restores existing Review
+behavior; `stop` leaves a resumable interruption. Neither option grants
+publication beyond the existing Autofix switch.
+
+All settings, bounds, score semantics, example commands and evaluation limits are
+documented in [paragraph quality](quality.md). The complete
+[native Jev example](../examples/quality.yaml) and
+[DeepSeek JSON example](../examples/quality-deepseek.yaml) include context,
+thresholds, comparison and audit defaults. Web global/project settings preserve the same
+quality fields; provider/model registration remains global.
 
 ## Output
 
