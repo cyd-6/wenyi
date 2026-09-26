@@ -1,6 +1,32 @@
 import type { Messages } from "../catalog";
 
 const zhCN = {
+  "candidates.mode": "三候选择优",
+  "candidates.judge": "译文评审模型",
+  "candidates.chooseJudge": "选择已注册的评审模型",
+  "candidates.modeHelp":
+    "通常每批需要三次翻译、可选的三次润色和一次评审，选择一整批。完全重复时最多额外生成两次。主评审失败后依次尝试备用模型和 strong 档模型。可在总设置注册 JEV，也可选择其他模型。",
+  "candidates.compare": "候选对照",
+  "candidates.none": "此段落没有候选记录。",
+  "candidates.batchHelp":
+    "第 {first}–{last} 段作为完整批次评审，选中结果适用于整个批次。",
+  "candidates.generating": "正在生成候选",
+  "candidates.polishing": "正在润色候选",
+  "candidates.judging": "等待评审结果",
+  "candidates.selected": "已选出候选",
+  "candidates.published": "选中译文已保存",
+  "candidates.winner": "本批次选中：{id}",
+  "candidates.judgedBy": "实际评审模型：{model}",
+  "candidates.fallback": "此次选择由备用评审模型完成。",
+  "candidates.confidence": "评审置信度：{value}%",
+  "candidates.changed":
+    "当前译文在择优后已有修改，下方候选保留当时的评审结果。",
+  "candidates.candidate": "候选 {id}",
+  "candidates.duplicate": "与候选 {id} 完全相同",
+  "candidates.pending": "候选尚未完成",
+  "candidates.beforePolish": "润色前译文",
+  "candidates.wholeBatch": "查看完整批次",
+
   "common.untitledChapter": "未命名章节",
   "appLayout.wenyi": "文译",
   "appLayout.projects": "项目列表",

@@ -82,6 +82,7 @@ export type ChapterSummary = Output<"ChapterSummary">;
 export type SegmentOut = Output<"SegmentOut">;
 export type ChapterSegments = Output<"ChapterSegments">;
 export type SegmentRevision = Output<"SegmentRevision">;
+export type CandidateComparison = Output<"CandidateComparison">;
 export type Term = Output<"TermOut">;
 export type Conflict = Output<"ConflictOut">;
 export type StepDef = Output<"StepDef">;
@@ -114,6 +115,10 @@ export interface ReportData {
 
 // API calls.
 export const api = {
+  segmentCandidates: (pid: string, ci: number, segment: number) =>
+    request<CandidateComparison | null>(
+      `/projects/${pid}/chapters/${ci}/segments/${segment}/candidates`,
+    ),
   getGlobalDefaults: () => request<GlobalConfig>("/settings/defaults"),
   getProjectDefaults: (pid: string) =>
     request<ProjectConfig>(`/projects/${pid}/config/defaults`),

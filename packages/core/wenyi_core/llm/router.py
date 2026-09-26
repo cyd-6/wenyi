@@ -5,17 +5,25 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 from contextlib import contextmanager
+from dataclasses import replace
 from threading import Lock
 from uuid import uuid4
 
 from .base import LLMClient, Messages
+from .choice import (
+    ChoiceInputTooLarge,
+    ChoiceProtocolError,
+    ChoiceRequest,
+    ChoiceResult,
+    ChoiceUnavailable,
+)
 from .configuration import LLMConfig
 from .limits import RequestLimits
 from .operations import require_operation
 from .registry import provider_spec
-from .retrying import is_retryable_provider_error
+from .retrying import error_status_code, is_retryable_provider_error
 from .routing import ResolvedRoute, model_route, resolve_routes
-from .transport import ProviderAdapter, RequestContext
+from .transport import ProviderAdapter, ProviderCredentialsError, RequestContext
 from .usage import UsageSample
 
 
@@ -40,8 +48,25 @@ class RoutedLLMClient(LLMClient):
     def validate_credentials(self, operations: Iterable[str] | None = None) -> None:
         connections: set[str] = set()
         for operation in self.routes if operations is None else operations:
-            require_operation(operation)
+            spec = require_operation(operation)
             route = self.routes[operation]
+            if spec.request_kind == "choice":
+                errors = []
+                for profile in (route.profile, *route.fallbacks):
+                    candidate = model_route(self.config, operation, profile, origin="check")
+                    self._validate_token_reservation(candidate)
+                    try:
+                        self.adapter(candidate.provider).validate_credentials()
+                    except ProviderCredentialsError as error:
+                        errors.append(error)
+                    else:
+                        break
+                else:
+                    details = "; ".join(str(error) for error in errors)
+                    raise ChoiceUnavailable(
+                        f"No judge has usable credentials: {details}"
+                    ) from errors[-1]
+                continue
             connections.add(route.provider)
             connections.update(self.config.models[profile].provider for profile in route.fallbacks)
             self._validate_token_reservation(route)
@@ -65,7 +90,20 @@ class RoutedLLMClient(LLMClient):
     ) -> str:
         require_operation(operation)
         primary = self.routes[operation]
-        return self._complete(messages, primary, json_mode=json_mode, max_tokens=max_tokens)
+        if require_operation(operation).request_kind != "text":
+            raise ValueError(f"{operation} requires the choice interface")
+        result = self._complete(messages, primary, json_mode=json_mode, max_tokens=max_tokens)
+        assert isinstance(result, str)
+        return result
+
+    def choose(self, request: ChoiceRequest, *, operation: str) -> ChoiceResult:
+        if require_operation(operation).request_kind != "choice":
+            raise ValueError(f"{operation} is not a choice operation")
+        result = self._complete(
+            request.messages(), self.routes[operation], json_mode=True, choice=request
+        )
+        assert isinstance(result, ChoiceResult)
+        return result
 
     def _complete(
         self,
@@ -74,7 +112,8 @@ class RoutedLLMClient(LLMClient):
         *,
         json_mode: bool,
         max_tokens: int | None = None,
-    ) -> str:
+        choice: ChoiceRequest | None = None,
+    ) -> str | ChoiceResult:
         operation = primary.operation
         if max_tokens is not None:
             primary = model_route(
@@ -164,15 +203,46 @@ class RoutedLLMClient(LLMClient):
                 self.limits.wait_for_retry,
             )
             try:
-                result = self.adapter(route.provider).generate(
-                    [dict(message) for message in messages],
-                    route.request_model(),
-                    json_mode=json_mode,
-                    context=context,
-                )
+                adapter = self.adapter(route.provider)
+                if choice is not None:
+                    # A missing local credential is not a remote attempt and consumes no quota.
+                    adapter.validate_credentials()
+                    result = adapter.choose(choice, route.request_model(), context=context)
+                    result = replace(
+                        result,
+                        model=result.model or route.model,
+                        provider=route.provider_kind,
+                        fingerprint=route.fingerprint,
+                        fallback_used=position > 0,
+                    )
+                else:
+                    result = adapter.generate(
+                        [dict(message) for message in messages],
+                        route.request_model(),
+                        json_mode=json_mode,
+                        context=context,
+                    )
             except Exception as error:
                 emit("llm_request_failed", error_type=type(error).__name__)
-                if position == len(routes) - 1 or not is_retryable_provider_error(error):
+                recoverable = is_retryable_provider_error(error)
+                if choice is not None:
+                    recoverable = (
+                        recoverable
+                        or isinstance(
+                            error,
+                            (ChoiceProtocolError, ChoiceInputTooLarge, ProviderCredentialsError),
+                        )
+                        or error_status_code(error) is not None
+                    )
+                if not recoverable:
+                    raise
+                if position == len(routes) - 1:
+                    if choice is not None:
+                        raise ChoiceUnavailable(
+                            "All translation judges failed; saved candidates remain resumable. "
+                            "Check credentials and service availability; reduce "
+                            "segment.max_tokens_per_batch if the complete evidence is too large."
+                        ) from error
                     raise
                 emit("llm_model_failover", next_profile=routes[position + 1].profile)
             else:

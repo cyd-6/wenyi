@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from ..candidates import recover_candidate_publications
 from ..glossary.extractor import TranslatedSegmentEvidence
 from ..glossary.store import GlossaryStore
 from ..ingest.models import Segment
@@ -23,6 +24,7 @@ from .docx_styles import DocxStyleService
 from .runstore import STATUS_DONE
 from .title_translation import TitleTranslationService
 from .translation_batch import BatchPlan, TranslationBatchExecutor, resume_batches
+from .translation_candidates import TranslationCandidateService
 
 if TYPE_CHECKING:
     from .annotations import AnnotationService
@@ -49,6 +51,7 @@ class TranslationService:
         self._docx_styles = DocxStyleService(runtime)
         self._titles = TitleTranslationService(runtime.title_translator)
         self._batches = TranslationBatchExecutor(runtime.translator, runtime.polisher)
+        self._candidates = TranslationCandidateService(runtime.client, runtime.config)
 
     def run(
         self,
@@ -206,6 +209,8 @@ class TranslationService:
         completed-paragraph count.
         """
         chapter = store.load_chapter(ci)
+        if self._runtime.config.pipeline.best_of_three:
+            recover_candidate_publications(store, ci)
         text_segs = chapter.text_segments
         if not text_segs:
             store.set_chapter_status(ci, STATUS_DONE)
@@ -320,12 +325,24 @@ class TranslationService:
                 next_source,
                 allow_empty_translations=allow_empty_translations,
             )
-            result = self._batches.execute(plan, polish=self._runtime.config.pipeline.polish)
+            candidate_record = None
+            if self._runtime.config.pipeline.best_of_three:
+                result, candidate_record = self._candidates.execute(
+                    plan,
+                    store,
+                    flush_usage=lambda: self._runtime.flush_usage(
+                        store, scope="translation_candidates"
+                    ),
+                )
+            else:
+                result = self._batches.execute(plan, polish=self._runtime.config.pipeline.polish)
             for segment, target, before_polish in zip(b, result.targets, result.before_polish):
                 segment.target = target
                 segment.target_before_polish = before_polish
             # Persist translations incrementally so interruption resumes after this batch.
             store.save_chapter(chapter)
+            if candidate_record is not None:
+                self._candidates.published(store, candidate_record)
             # Handle only annotated logical paragraphs touched by this batch, in source order.
             # If the batch contains only an initial slice of a long paragraph, wait until its final
             # continuation finishes before merging and aligning.

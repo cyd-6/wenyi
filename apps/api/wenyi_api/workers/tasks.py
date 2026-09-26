@@ -181,6 +181,7 @@ def _execute(
 
     pool = init_pool(settings.psycopg_dsn)
     storage = _pipeline_storage(pid, pool)
+    storage.event_run_id = run_id
     redis = redis_lib.from_url(settings.redis_url)
     job = dal.get_job_by_arq_id(run_id) if run_id else None
     client = None

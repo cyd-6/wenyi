@@ -11,6 +11,7 @@ export function WorkflowSettings({
   error,
   subtitles = false,
   pdf = false,
+  models = {},
   onField,
 }: {
   config: Record<string, unknown>;
@@ -18,10 +19,15 @@ export function WorkflowSettings({
   error?: unknown;
   subtitles?: boolean;
   pdf?: boolean;
+  models?: Record<string, unknown>;
   onField: (group: string, key: string, value: unknown) => void;
 }) {
   const { t: tr } = useI18n();
+  const routes = section(section(config, "llm"), "routes");
+  const judge = section(routes, "translation.judge");
+  const judgeValue = judge.model || (judge.tier ? `tier:${judge.tier}` : "");
   const PIPELINE: [string, string][] = [
+    ["best_of_three", tr("candidates.mode")],
     ["book_understanding", tr("settings.bookUnderstanding")],
     ["polish", tr("settings.polishing")],
     ["review", tr("common.wholeBookReview")],
@@ -48,6 +54,47 @@ export function WorkflowSettings({
         <p className="text-sm text-muted-foreground">
           {tr("settings.subtitlesUseASeparateWorkflowWithoutBook")}
         </p>
+      )}
+      {!subtitles && Boolean(section(config, "pipeline").best_of_three) && (
+        <div className="space-y-2 rounded-lg border p-4">
+          <Label htmlFor="candidate-judge">{tr("candidates.judge")}</Label>
+          <Select
+            id="candidate-judge"
+            value={String(judgeValue)}
+            onChange={(event) => {
+              const routes = { ...section(section(config, "llm"), "routes") };
+              const old = section(routes, "translation.judge");
+              const selected = event.target.value;
+              if (!selected) delete routes["translation.judge"];
+              else
+                routes["translation.judge"] = {
+                  ...(selected.startsWith("tier:")
+                    ? { tier: selected.slice(5) }
+                    : { model: selected }),
+                  fallbacks: old.fallbacks || [],
+                };
+              onField("llm", "routes", routes);
+            }}
+          >
+            <option value="">{tr("candidates.chooseJudge")}</option>
+            {Object.entries(models).map(([id, raw]) => {
+              const model = raw as Record<string, unknown>;
+              return (
+                <option key={id} value={id}>
+                  {id} · {String(model.model)}
+                </option>
+              );
+            })}
+            {["strong", "cheap", "fast"].map((tier) => (
+              <option key={tier} value={`tier:${tier}`}>
+                {tier}
+              </option>
+            ))}
+          </Select>
+          <p className="text-sm text-muted-foreground">
+            {tr("candidates.modeHelp")}
+          </p>
+        </div>
       )}
       <Disclosure
         title={tr("settings.performance")}

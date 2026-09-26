@@ -42,9 +42,63 @@ creation template; project settings use current global defaults and the project'
 workflow template, preserving its translation languages. Restoring defaults cannot
 remove models still selected by other projects; change those selections first.
 Operation selectors show the effective tier directly, without a “Follow default tier”
-prefix. Selecting the operation's default tier clears its model override and preserves
+prefix. Selecting a text operation's default tier clears its model override and preserves
 any configured fallbacks. Concurrent global saves use a revision check;
 a stale editor must reload before saving again.
+
+## Best-of-three body translation
+
+`pipeline.best_of_three` defaults to `false`. When enabled, explicitly select a
+registered judge through `llm.routes.translation.judge`. For example:
+
+```yaml
+llm:
+  preset: deepseek
+  providers:
+    typesafe:
+      kind: typesafe
+      api_key_env: TYPESAFE_API_KEY
+  models:
+    jev:
+      provider: typesafe
+      model: jev-1.13.0
+  routes:
+    translation.judge: {model: jev}
+pipeline:
+  best_of_three: true
+  polish: true
+```
+
+TypeSafe uses its native [Choice API](https://docs.typesafe.ai/api), with the version in the
+[model documentation](https://docs.typesafe.ai/models), at
+`https://api.typesafe.ai/v1/systemone`. Set the key in the CLI or server environment;
+the example contains no credential. This adapter supports choices only, has no model
+options or text-generation preset, and cannot serve translation, polishing or tier
+defaults. A model output-token setting is used for local reservation only and is not
+sent as a generation parameter to TypeSafe. The service checks its actual model context
+window; oversized requests go to the next judge without truncation or a local byte cutoff.
+
+To replace JEV, point `translation.judge.model` at any registered text model, or select
+a tier explicitly. The effective judge chain is the primary, explicit `fallbacks`, then
+the current `strong` model, deduplicated by physical model identity. Missing credentials,
+service errors and invalid decisions can advance this chain. Configuration errors,
+cancellation and exhausted invocation budgets stop the run. If every judge fails, the
+candidates remain saved for resume. Low confidence is recorded without another judgment.
+`models list`, `models explain` and workflow credential checks use this same chain.
+
+Three independent translations share the same batch inputs. With `polish: true`, each
+is polished before comparison; with `false`, their initial translations are compared.
+The judge selects one entire batch. Exact duplicates, ignoring paragraph-edge whitespace,
+allow at most two extra generations per batch across resumes. Remaining duplicates are
+retained and identified. Normally each batch requires three translation requests, up to three
+polishing requests and one judgment per batch, excluding recovery and duplicate retries.
+Chapter titles and subtitles retain their existing workflows.
+
+In Web global Settings, register the TypeSafe connection and JEV profile (or another
+model). Enable **Best of three** in project workflow settings and choose the judge.
+Standard defaults keep it off; Quick draft explicitly turns it off. The optional mode
+changes only unfinished batches. See [candidate comparison](usage.md#compare-translation-candidates)
+and the [pipeline checkpoints](pipeline.md#candidate-selection-and-checkpoints).
 
 ## Languages
 
@@ -132,6 +186,7 @@ Replace `YOUR_EDITOR_MODEL` with a model supported by your endpoint. Other opera
 | `openai-compatible` | Explicit `base_url`; optional `api_key_env`; `reasoning_style` | `thinking`, `reasoning_effort`, `json_response_fallback`, `request_overrides` |
 | `orcarouter` | `https://api.orcarouter.ai/v1`; `ORCAROUTER_API_KEY`; `reasoning_style` | Same as `openai-compatible` |
 | `ollama`, `vllm` | `http://localhost:11434/v1`, `http://localhost:8000/v1`; optional credentials; `reasoning_style` | Same as `openai-compatible` |
+| `typesafe` | Native Choice API; `https://api.typesafe.ai/v1`, `TYPESAFE_API_KEY` | Choice only; no model options |
 | `fake` | No network or credentials | No provider options |
 
 Compatible endpoints accept `reasoning_style: none` (default), `deepseek`, `openai`, or `openrouter`. `json_response_fallback: reasoning_content` is an explicit option for gateways placing JSON there; the default is `none`, and non-JSON reasoning is never accepted. Gemini thinking level and thinking budget are mutually exclusive. Raw extension dictionaries are endpoint-specific; offline validation cannot prove a remote model supports them.
@@ -150,6 +205,7 @@ DeepSeek accepts `reasoning_effort: low`, `high`, or `max`; `thinking: false` ex
 | `synopsis.book` | `fast` | Book synopsis; 1,200-token hint |
 | `translation.body` | `strong` | Body translation and alignment recovery |
 | `translation.title` | `strong` | Chapter and TOC titles |
+| `translation.judge` | Explicit selection; `strong` is the final fallback | Choose one whole batch in best-of-three mode |
 | `polish.body` | `strong` | Prose polishing |
 | `glossary.extract` | `fast` | Glossary extraction |
 | `glossary.align_history` | `fast` | Earlier translation alignment |
@@ -203,7 +259,7 @@ Connections sharing a `quota_group` share RPM/TPM reservations within one invoca
 
 `deadline_seconds` and Ctrl+C stop queued requests and backoff cooperatively. An in-flight SDK call can finish or reach its connection timeout; completed work is retained for resume. A stopped invocation gets a new budget on restart.
 
-For stateless requests, an explicit route may use `fallbacks: [backup_profile]`. Wenyi tries that chain only after a retryable transport failure exhausts retries. Authentication, configuration and output-schema errors do not trigger model failover. Resumable `review.verify`, `review.arbitrate`, and `autofix.verify` conversations reject failover to prevent mixed-model traces.
+For stateless text requests, an explicit route may use `fallbacks: [backup_profile]`. Wenyi tries that chain only after a retryable transport failure exhausts retries. Authentication, configuration and output-schema errors do not trigger model failover. Resumable `review.verify`, `review.arbitrate`, and `autofix.verify` conversations reject failover to prevent mixed-model traces.
 
 ### Usage and resume
 
@@ -228,6 +284,7 @@ Use isolated public-domain fixtures before choosing a mixed-model setup. No new 
 
 ```yaml
 pipeline:
+  best_of_three: false
   review: true
   polish: true
   rolling_context_segments: 6
@@ -250,6 +307,7 @@ pipeline:
   babeldoc_timeout: 600
 ```
 
+- `best_of_three`: generate three independent candidates and select one complete batch with an explicitly configured judge. Disabled by default; see [mode configuration](#best-of-three-body-translation).
 - `review`: enabled by default; automatically run the evidence-driven whole-book review after the complete book has been translated. Pass `--no-review` or set this to `false` to skip it in the one-command workflow. The explicit `wenyi review` command remains available.
 - `polish`: run the strong model over translated batches again for style. This may improve quality but significantly increases runtime and cost.
 - `rolling_context_segments`: number of recent translated segments included with each translation batch. Translation and polishing also receive one following source segment from the same chapter as a read-only reference, including when this setting is zero. This built-in lookahead does not change output counts or saved translation context; see [whole-book context](pipeline.md#whole-book-understanding-and-context).

@@ -28,6 +28,7 @@ class OperationSpec:
     review: bool = False
     resumable_conversation: bool = False
     protocol_version: int = 1
+    request_kind: str = "text"
 
 
 def register_operations(specs: Iterable[OperationSpec]) -> Mapping[str, OperationSpec]:
@@ -46,6 +47,8 @@ def register_operations(specs: Iterable[OperationSpec]) -> Mapping[str, Operatio
             raise ValueError(f"Invalid output hint: {spec.id}")
         if spec.protocol_version <= 0:
             raise ValueError(f"Invalid operation protocol version: {spec.id}")
+        if spec.request_kind not in {"text", "choice"}:
+            raise ValueError(f"Invalid operation request kind: {spec.id}")
         registry[spec.id] = spec
     for spec in registry.values():
         seen = {spec.id}
@@ -93,6 +96,14 @@ OPERATIONS = register_operations(
         ),
         OperationSpec(
             "translation.body", "Translate body paragraphs", "strong", protocol_version=2
+        ),
+        OperationSpec(
+            "translation.judge",
+            "Choose one complete translation candidate",
+            "strong",
+            output_tokens=1024,
+            flags=("best_of_three",),
+            request_kind="choice",
         ),
         OperationSpec("translation.title", "Translate chapter and TOC titles", "strong"),
         OperationSpec(
@@ -183,12 +194,14 @@ def workflow_operations(workflow: str, flags: Mapping[str, object]) -> tuple[str
         for spec in OPERATIONS.values()
         if workflow in spec.workflows
         and (not spec.review or workflow == "review" or flags.get("review", True))
-        and all(flags.get(flag, True) for flag in spec.flags)
+        and all(flags.get(flag, flag != "best_of_three") for flag in spec.flags)
     )
 
 
 def configured_operations(config: Config, workflow: str) -> tuple[str, ...]:
     """Map product settings to registry flags without constructing a model client."""
+    if workflow == "translate" and config.pipeline.best_of_three:
+        config.require_translation_judge()
     flags = config.pipeline.model_dump()
     flags["language_auto"] = config.source_lang == "auto"
     return workflow_operations(workflow, flags)

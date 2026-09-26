@@ -141,6 +141,7 @@ export function GlobalConfiguration() {
             llm={llm}
             models={object(llm.models)}
             operations={caps?.operations}
+            providerCapabilities={caps?.provider_capabilities}
             disabled={disabled}
             onChange={changeLlm}
           />
@@ -176,6 +177,7 @@ export function GlobalConfiguration() {
           </p>
           <WorkflowSettings
             config={effective}
+            models={object(llm.models)}
             disabled={disabled}
             pdf
             error={error}

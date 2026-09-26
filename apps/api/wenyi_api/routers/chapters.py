@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+from wenyi_core.candidates import CandidateComparison, load_candidate_comparison
 
 from .. import dal
 from ..job_service import start_job
@@ -69,6 +70,15 @@ def list_chapters(pid: str) -> list[dict]:
 def get_chapter(pid: str, ci: int) -> dict:
     require_book(require_project(pid))
     return chapter_payload(storage_for(pid), ci)
+
+
+@router.get("/{ci}/segments/{seg_idx}/candidates", response_model=CandidateComparison | None)
+def get_candidates(pid: str, ci: int, seg_idx: int) -> CandidateComparison | None:
+    require_book(require_project(pid))
+    try:
+        return load_candidate_comparison(storage_for(pid), ci, seg_idx)
+    except (KeyError, FileNotFoundError):
+        raise HTTPException(404, "chapter or segment not found") from None
 
 
 def _linked_toc_entries(manifest: dict, chapter: dict) -> list[dict]:

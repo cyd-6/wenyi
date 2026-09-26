@@ -86,7 +86,15 @@ def save_settings(
 
 def registered_models(config: Config) -> dict[str, Any]:
     """Expose model choices without provider credentials or connection settings."""
+    from wenyi_core.llm.registry import provider_spec
+
     return {
-        key: {"model": profile.model, "provider": profile.provider}
+        key: {
+            "model": profile.model,
+            "provider": profile.provider,
+            "supports_text": provider_spec(config.llm.providers[profile.provider].kind)
+            .adapter_type()
+            .supports_text,
+        }
         for key, profile in config.llm.models.items()
     }

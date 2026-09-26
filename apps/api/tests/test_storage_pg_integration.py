@@ -110,6 +110,34 @@ def document(tmp_path):
     )
 
 
+def test_candidate_checkpoints_resume_through_storage_port(storage, tmp_path):
+    from tests.test_translation_candidates import CandidateClient, candidate_config, execute
+    from wenyi_core.candidates import load_candidate_comparison
+    from wenyi_core.llm.choice import ChoiceUnavailable
+    from wenyi_core.pipeline.translation_batch import BatchPlan
+
+    doc = document(tmp_path)
+    chapter = doc.chapters[0]
+    chapter.segments = [
+        Segment(index=4, source="First source"),
+        Segment(index=9, source="Second source"),
+    ]
+    storage.init_from_document(doc)
+    plan = BatchPlan.capture(0, 0, chapter.segments, [], "", "", "", "", [[], []], "")
+    config = candidate_config(polish=False)
+    first = CandidateClient(config)
+    first.fail_judge = True
+    with pytest.raises(ChoiceUnavailable):
+        execute(config, first, storage, plan)
+    second = CandidateClient(config)
+    result, record = execute(config, second, storage, plan)
+    assert second.generated == 0
+    assert second.judged == 1
+    assert result.targets == tuple(record.candidates[1].targets)
+    assert load_candidate_comparison(storage, 0, 9).decision.choice == "B"
+    assert storage.load_usage()["totals"]["calls"] == 5
+
+
 def initialize(storage, tmp_path):
     doc = document(tmp_path)
     digest = source_sha256(doc.source_path)

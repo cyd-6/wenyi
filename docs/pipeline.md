@@ -56,6 +56,49 @@ The following segment is a quoted, read-only reference from the same chapter. It
 
 Alignment retries retain the reference. Single-paragraph fallback uses that paragraph's immediate source neighbor, including an unchanged number or symbol. Resume recomputes the neighbor from source order after splitting completed and pending batches, preserving completed targets and stable segment identities. Lookahead is never added to the saved rolling translation context. It adds at most one source segment to each translation or polishing request, with no extra model call. This supplies continuity evidence; actual wording and sentence endings still depend on the model.
 
+## Candidate selection and checkpoints
+
+With `pipeline.best_of_three` enabled, the body translation service freezes one batch's
+source, glossary, style, synopsis, digest, annotations and neighboring context. At most
+three workers create independent translator/polisher agents and conversations using the
+same routed client, quotas and usage ledger. Chapters and batches still advance serially.
+The candidates have neutral IDs A, B and C; completion order does not change their identity.
+
+Each initial translation is checkpointed before optional polishing. The judge compares
+three complete polished batches (or initial batches with polishing off) for fidelity,
+completeness, terminology, references, coherence, natural expression and established style.
+It returns only a selection, never replacement prose. Paragraph alignment recovery and
+preserved numbers/symbols follow the existing executor, including intentional empty MinerU
+translations. Exact duplicates ignore only paragraph-edge whitespace: later duplicate IDs
+are regenerated with a wording-diversity instruction, up to two extra generations per
+batch across resumes. Any remaining duplicates remain visible to the judge and reader.
+
+Version 1 records live under `translation-candidates/<chapter>/<batch-id>.json`, with a
+chapter-local `index.json` mapping stable segment indices to the corresponding batch.
+All reads/writes use `ArtifactStorage`: local JSON is atomic, Web records use PostgreSQL
+artifacts. No extra Web state files or business tables are created. Records preserve
+raw/polished text, resumable conversations, stage/model fingerprints, retry reservations,
+duplicate labels and the decision. Usage is journaled before a result becomes reusable.
+
+Resume fills missing stages; changing only the judge reuses translations and polishing,
+and changing the polisher reuses initial translations. Source, context, generation model
+or batch-boundary changes invalidate the batch cache. Completed formal paragraphs always
+skip generation. The decision is saved before the chapter service publishes the entire
+winning batch; `target_before_polish` comes from that winner. A crash after formal saving
+can repair the publication marker. Only formal winners update rolling context, terminology,
+annotations and completed-paragraph progress. Candidate and judge events do not advance
+that count. Failed candidates never overwrite formal targets.
+
+`GET /projects/{pid}/chapters/{ci}/segments/{seg_idx}/candidates` reads the chapter index,
+checks source identity and returns the batch comparison or `null` for an existing paragraph
+without records. It does not scan a project's artifacts. Historical candidates remain
+unchanged after manual or Review revisions. See [configuration](configuration.md#best-of-three-body-translation)
+for judge failover and [usage](usage.md#compare-translation-candidates) for the read-only UI.
+
+Offline tests verify execution and recovery contracts. A real-model before/after evaluation
+on a public-domain novel of at least 50,000 words, including quality, call counts and elapsed
+time, has not been performed for this mode; no translation-quality improvement is claimed.
+
 ## Glossary
 
 The initial analysis seeds the glossary. As translation proceeds, Wenyi extracts and updates people, places, organizations, terms, techniques, recurring expressions, and forms of address from completed source-and-target pairs. By default, later batches receive only terms that appear in the current chapter, keeping unrelated entries out of the prompt.
@@ -76,7 +119,7 @@ The glossary constrains later translation and supplies evidence to the final rev
 - **Cross-chunk arbitration:** after all concurrent chunks finish, contradictory consistency proposals for the same term, pronoun, or fixed expression can be sent through a final arbiter. The final suggestion set conservatively rewrites every losing proposal to the winning value; every superseded proposal remains available in the round traces. It never changes the glossary or translated text.
 - **Shadow Fix and blind re-review:** confirmed issues for the same segment are grouped into one Fixer request. The Fixer receives the style brief, book synopsis, chapter digest, relevant glossary subset, and nearby source/translation pairs, and must return one complete replacement segment rather than a diff. All Fixers in a round read one immutable shadow snapshot; their patches are applied together only after the round finishes. The next whole-book Review and evidence index read the updated shadow text without receiving the old issue explanations. Unresolved arbitration conflicts and unverified Agent fallbacks are left unresolved. The loop stops after consecutive clean passes, the configured Fix limit, no progress, or an A→B→A cycle.
 - **Optional Autofix publishing:** the Review engine itself remains read-only. When `review_autofix` is enabled, a separate publisher first overlays the folded `changes`, then sends final unresolved issues through the existing Review Agent Loop against that updated translation. Confirmed issues reuse the existing Fixer; no Autofix-specific loop or prompt exists. The publisher writes only final complete segments to formal `target` values, then refreshes annotation and DOCX style offsets.
-Final review is the sole model-driven semantic review stage and is enabled by
+Whole-book final review is separate from optional batch candidate selection and is enabled by
 default. Setting `pipeline.review: false` or passing `--no-review` skips it in the
 one-command workflow. Review is also available as an independent stage:
 

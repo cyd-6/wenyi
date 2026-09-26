@@ -19,6 +19,8 @@ def test_defaults_match_dev_and_preserve_language_direction():
         for key in ("book_understanding", "polish", "review", "review_autofix")
     )
     quick = strategy_to_config({"template": "快速出稿"}, base())
+    assert not cfg.pipeline.best_of_three
+    assert not quick.pipeline.best_of_three
     assert not any(
         getattr(quick.pipeline, key)
         for key in ("book_understanding", "polish", "review", "review_autofix")

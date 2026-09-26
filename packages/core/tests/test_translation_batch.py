@@ -82,6 +82,21 @@ def test_batch_passes_mineru_blank_allowance_to_translator():
     assert len(client.calls) == 1
 
 
+@pytest.mark.parametrize("invalid", [None, 123, {"text": "unexpected"}])
+def test_polishing_never_publishes_nonstring_model_values(invalid):
+    def handler(messages, *_):
+        if len(messages) == 2 and "literary translator" in messages[0]["content"]:
+            return '{"translations":["Initial translation"]}'
+        return json.dumps({"polished": [invalid]})
+
+    config = Config.from_dict({"llm": {"preset": "fake"}})
+    client = FakeClient(handler=handler)
+    result = TranslationBatchExecutor(Translator(client, config), Polisher(client, config)).execute(
+        _plan(["Source paragraph"]), polish=True
+    )
+    assert result.targets == ("Initial translation",)
+
+
 @pytest.mark.parametrize("backend", ["mineru", "babeldoc", "text"])
 def test_chapter_service_limits_blank_allowance_and_resumes_without_retranslation(
     tmp_path, backend

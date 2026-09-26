@@ -69,6 +69,8 @@ def model_route(
     connection = config.providers[model.provider]
     provider = provider_spec(connection.kind)
     adapter = provider.adapter_type()
+    if spec.request_kind == "text" and not adapter.supports_text:
+        raise ValueError(f"{operation}: provider {connection.kind} supports choices only")
     options = provider.validate_model(model)
     if output_hint is not None and output_hint <= 0:
         raise ValueError("max_tokens must be positive")
@@ -132,6 +134,18 @@ def resolve_routes(config: LLMConfig) -> Mapping[str, ResolvedRoute]:
             profile = config.tiers[tier or "strong"]
             fallbacks = ()
             origin = f"default tier {tier}"
+        if spec.request_kind == "choice":
+            # Deduplicate physical models, including aliases for the same connection.
+            seen = {model_route(config, operation, profile, origin=origin).model_identity}
+            unique = []
+            for candidate in (*fallbacks, config.tiers["strong"]):
+                fingerprint = model_route(
+                    config, operation, candidate, origin="fallback"
+                ).model_identity
+                if fingerprint not in seen:
+                    seen.add(fingerprint)
+                    unique.append(candidate)
+            fallbacks = tuple(unique)
         if fallbacks and spec.resumable_conversation:
             raise ValueError(
                 f"{operation}: model failover is not allowed inside resumable evidence conversations"
@@ -139,6 +153,8 @@ def resolve_routes(config: LLMConfig) -> Mapping[str, ResolvedRoute]:
         result = model_route(
             config, operation, profile, origin=origin, tier=tier, fallbacks=fallbacks
         )
+        for fallback in fallbacks:
+            model_route(config, operation, fallback, origin="fallback")
         resolved[operation] = result
         return result
 

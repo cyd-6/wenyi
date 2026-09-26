@@ -57,6 +57,55 @@ def test_subtitle_plan_does_not_show_book_steps(monkeypatch):
     assert [s["id"] for s in result["stages"]] == ["srt", "assemble"]
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_candidate_mode_uses_the_queued_configuration_snapshot(monkeypatch, enabled):
+    import redis
+
+    monkeypatch.setattr(configuration, "require_project", lambda pid: {"id": pid, "fmt": "epub"})
+    monkeypatch.setattr(
+        configuration, "effective_config", lambda _: pytest.fail("Read live settings")
+    )
+    monkeypatch.setattr(
+        configuration.dal,
+        "list_jobs",
+        lambda pid: [
+            {
+                "kind": "translation",
+                "status": "queued",
+                "run_id": "candidate-run",
+                "params": {"config_snapshot": {"pipeline": {"best_of_three": enabled}}},
+            }
+        ],
+    )
+    monkeypatch.setattr(redis.Redis, "from_url", lambda *_a, **_kw: None)
+    result = configuration.workflow("candidate-project")
+    assert result["run_id"] == "candidate-run"
+    assert next(s for s in result["stages"] if s["id"] == "best_of_three")["enabled"] is enabled
+
+
+def test_worker_events_preserve_actual_project_and_run_identity():
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    from wenyi_api.storage_pg import PostgresStorage
+
+    writes = []
+
+    class Pool:
+        @contextmanager
+        def connection(self):
+            yield SimpleNamespace(execute=lambda sql, params: writes.append(params))
+
+    store = PostgresStorage("real-project", cast(Any, Pool()))
+    store.event_run_id = "real-run"
+    for event in ("translation_candidate_ready", "translation_judge_started", "llm_model_failover"):
+        store.log_event(event, project_id="wrong-project", run_id="wrong-run", chapter=2)
+    assert all(params[0] == "real-project" for params in writes)
+    assert all(params[2].obj["project_id"] == "real-project" for params in writes)
+    assert all(params[2].obj["run_id"] == "real-run" for params in writes)
+    assert all("done" not in params[2].obj for params in writes)
+
+
 def test_progress_cache_carries_run_identity_and_cumulative_elapsed_time(monkeypatch):
     import json
     from datetime import datetime

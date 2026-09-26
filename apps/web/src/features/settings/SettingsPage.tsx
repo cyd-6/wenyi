@@ -127,6 +127,7 @@ export default function SettingsPage() {
               llm={section(effective, "llm")}
               models={config.data?.registered_models || {}}
               operations={caps?.operations}
+              providerCapabilities={caps?.provider_capabilities}
               disabled={formDisabled}
               onChange={(llm) => {
                 const next = { ...effective, llm };
@@ -142,6 +143,7 @@ export default function SettingsPage() {
             )}
             <WorkflowSettings
               config={effective}
+              models={config.data?.registered_models || {}}
               disabled={formDisabled}
               error={configurationError}
               subtitles={subtitles}

@@ -337,6 +337,7 @@ class Capabilities(BaseModel):
     output_formats: list[str]
     pdf: PDFCapabilities
     providers: list[str]
+    provider_capabilities: dict[str, dict[str, bool]] = Field(default_factory=dict)
     operations: list[dict[str, Any]]
 
 

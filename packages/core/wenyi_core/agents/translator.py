@@ -32,6 +32,7 @@ class Translator(Agent):
         super().__init__(client, config)
         self.last_batch_turn: Messages | None = None
         self.last_batch_indices: list[int] | None = None
+        self.alternative_instruction: str = ""
 
     @staticmethod
     def _needs_translation(source: str) -> bool:
@@ -130,6 +131,8 @@ class Translator(Agent):
             numbered_source=prompts.numbered(sources),
             next_source=prompts.render_source_reference(next_source),
         )
+        if self.alternative_instruction:
+            user += "\n\n" + self.alternative_instruction
         messages: Messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},

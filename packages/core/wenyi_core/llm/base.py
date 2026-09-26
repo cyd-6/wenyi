@@ -10,6 +10,7 @@ from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from typing import Any
 
+from .choice import ChoiceRequest, ChoiceResult, parse_choice
 from .json_parser import parse_json_loose
 from .usage import UsageTracker
 
@@ -95,3 +96,7 @@ class LLMClient(ABC):
         """Request and parse JSON output."""
         text = self.complete(messages, operation=operation, json_mode=True, max_tokens=max_tokens)
         return parse_json_loose(text)
+
+    def choose(self, request: ChoiceRequest, *, operation: str) -> ChoiceResult:
+        """Allow injected text clients to implement closed-set decisions without a new SDK."""
+        return parse_choice(self.complete_json(request.messages(), operation=operation), request)

@@ -48,3 +48,28 @@ def test_translate_chapter_propagates_queue_failure(monkeypatch):
     with pytest.raises(HTTPException) as error:
         asyncio.run(chapters.translate_chapter("project-1", 1))
     assert error.value.status_code == 503
+
+
+def test_candidates_are_read_only_and_source_bound(monkeypatch, tmp_path):
+    from tests.test_translation_candidates import (
+        CandidateClient,
+        candidate_config,
+        candidate_plan,
+        candidate_store,
+        execute,
+    )
+
+    config = candidate_config(polish=False)
+    plan = candidate_plan()
+    store = candidate_store(tmp_path, plan)
+    monkeypatch.setattr(chapters, "require_project", lambda pid: {"id": pid, "fmt": "text"})
+    monkeypatch.setattr(chapters, "storage_for", lambda pid: store)
+    assert chapters.get_candidates("project-1", 0, 10) is None
+    execute(config, CandidateClient(config), store, plan)
+    comparison = chapters.get_candidates("project-1", 0, 10)
+    assert comparison.decision.choice == "B"
+    assert all(segment.target is None for segment in store.load_chapter(0).segments)
+    assert "turn" not in comparison.model_dump()["candidates"][0]
+    with pytest.raises(HTTPException) as error:
+        chapters.get_candidates("project-1", 0, 999)
+    assert error.value.status_code == 404

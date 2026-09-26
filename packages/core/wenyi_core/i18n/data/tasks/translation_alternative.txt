@@ -1,0 +1,2 @@
+Produce an independently worded alternative for this same batch. Preserve all meaning, paragraph alignment, terminology and established style. Do not change facts or force differences where only one wording is appropriate. Avoid repeating the following complete candidate verbatim:
+$previous

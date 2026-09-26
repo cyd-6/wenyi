@@ -36,6 +36,12 @@ STEP_REGISTRY = [
         "depends_on": ["batch_translate"],
     },
     {
+        "id": "best_of_three",
+        "name": "三候选择优",
+        "category": "per_chapter",
+        "depends_on": ["batch_translate"],
+    },
+    {
         "id": "annotation_alignment",
         "name": "注释定位",
         "category": "per_chapter",
@@ -69,8 +75,19 @@ STEP_REGISTRY = [
         "locked": True,
     },
 ]
-_SWITCHES = {"book_understanding", "polish", "annotation_alignment", "review", "review_autofix"}
-_STANDARD = {**dict.fromkeys(sorted(_SWITCHES), True), "punctuation_normalize": True}
+_SWITCHES = {
+    "book_understanding",
+    "polish",
+    "annotation_alignment",
+    "review",
+    "review_autofix",
+    "best_of_three",
+}
+_STANDARD = {
+    **dict.fromkeys(sorted(_SWITCHES), True),
+    "punctuation_normalize": True,
+    "best_of_three": False,
+}
 _QUICK = {
     **_STANDARD,
     "book_understanding": False,

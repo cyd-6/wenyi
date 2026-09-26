@@ -38,6 +38,34 @@ uv run wenyi models check --for translate
 
 这些命令只做本地预览与密钥检查，不发送请求。三个档位仍可作为默认入口；在 `llm.routes` 中独立配置操作即可混用模型。旧配置与用量账本的显式转换及预算设置见[配置说明](configuration.md#模型与操作路由)。
 
+## 候选对照
+
+先按[配置说明](configuration.md#正文三候选择优)注册并选择评审模型，再按次开启：
+
+```bash
+uv run wenyi translate book.epub --best-of-three
+uv run wenyi translate book.epub --best-of-three --no-polish
+uv run wenyi translate book.epub --no-best-of-three
+uv run wenyi models explain --operation translation.judge
+```
+
+开关覆盖 `pipeline.best_of_three`，不传则沿用配置。开启润色时比较三份润色稿，关闭时
+比较初稿；只选一整批，已完成正式段落始终跳过。标题和 SRT 不采用此模式，SRT 会拒绝
+这些只适用于书籍的 CLI 开关。
+
+Web 在**项目设置 → 流程设置**开启**三候选择优**并选择已注册的**译文评审模型**。
+连接与模型名在总设置注册；每个排队任务保留自己的配置快照。
+
+在校对页面通过**段落操作 → 编辑译文**或**修改历史**打开弹窗，再选择**候选对照**。
+按需加载当前段落的三份候选，标出整批胜者、重复候选、实际评审模型、备用模型启用情况
+及可用置信度。可展开完整原文／译文批次和润色前内容。对照为只读，人工修改仍通过原有
+编辑流程完成。Review 或人工修改了正式译文时，当前译文与历史选择分别展示；旧项目显示
+无候选记录。
+
+评审全部失败后，修正模型配置或凭据，再执行同一命令即可复用候选。评审证据不会截断；
+输入过大时选择容量足够的模型或减小 `segment.max_tokens_per_batch`。批次边界改变后，
+会为新的输入重新生成候选。预算、对齐恢复和重复重试会影响调用量，见[配置说明](configuration.md)。
+
 ## 多语言互译（实验性）
 
 先运行 `uv run wenyi languages` 查看内置语言。将以下片段写入自己的配置文件（模型配置沿用已有设置），即可直接中译英：

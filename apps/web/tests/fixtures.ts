@@ -179,7 +179,11 @@ export async function fakeApi(
       },
       ...overrides,
     };
-    if (path in data) return route.fulfill({ json: data[path] });
+    if (path in data) {
+      if (data[path] === null)
+        return route.fulfill({ contentType: "application/json", body: "null" });
+      return route.fulfill({ json: data[path] });
+    }
     return route.fulfill({
       status: 404,
       json: { detail: `Unexpected endpoint ${path}` },

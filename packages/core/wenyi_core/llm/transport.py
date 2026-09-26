@@ -11,12 +11,18 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
+from .choice import ChoiceProtocolError, ChoiceRequest, ChoiceResult, parse_choice
 from .configuration import ProviderConfig
+from .json_parser import JsonParseError, parse_json_loose
 from .retrying import RetryReporter, provider_retry
 from .usage import UsageSample
 
 OptionsT = TypeVar("OptionsT", bound=BaseModel)
 Messages = list[dict[str, str]]
+
+
+class ProviderCredentialsError(RuntimeError):
+    """This connection has no usable environment credential."""
 
 
 @dataclass(frozen=True)
@@ -50,6 +56,7 @@ class ProviderAdapter(ABC):
     requires_api_key = False
     requires_base_url = True
     protocol_version = 1
+    supports_text = True
     connection_options: type[BaseModel] = ConnectionOptions
 
     def __init__(self, cfg: ProviderConfig):
@@ -69,11 +76,11 @@ class ProviderAdapter(ABC):
     def validate_credentials(self) -> None:
         if self.api_key_env:
             if not os.environ.get(self.api_key_env, "").strip():
-                raise RuntimeError(
+                raise ProviderCredentialsError(
                     f"Environment variable {self.api_key_env} ({self.cfg.kind} API key) is not set"
                 )
         elif self.requires_api_key:
-            raise RuntimeError(f"Provider {self.cfg.kind} requires api_key_env")
+            raise ProviderCredentialsError(f"Provider {self.cfg.kind} requires api_key_env")
 
     def generate(
         self, messages: Messages, model: ResolvedModel, *, json_mode: bool, context: RequestContext
@@ -92,6 +99,34 @@ class ProviderAdapter(ABC):
                 return self._request(messages, model, json_mode=json_mode, context=context)
 
         return request()
+
+    def choose(
+        self, request: ChoiceRequest, model: ResolvedModel, *, context: RequestContext
+    ) -> ChoiceResult:
+        """Apply the same transport retry and accounting hooks to native and text choices."""
+        reporter = RetryReporter(
+            provider=self.cfg.kind,
+            tier=context.tier,
+            stage=context.operation,
+            max_attempts=self.cfg.max_retries + 1,
+            emit=context.emit,
+        )
+
+        @provider_retry(self.cfg.max_retries, reporter, sleep=context.sleep)
+        def decide() -> ChoiceResult:
+            with context.attempt_scope():
+                return self._choose(request, model, context=context)
+
+        return decide()
+
+    def _choose(
+        self, request: ChoiceRequest, model: ResolvedModel, *, context: RequestContext
+    ) -> ChoiceResult:
+        raw = self._request(request.messages(), model, json_mode=True, context=context)
+        try:
+            return parse_choice(parse_json_loose(raw), request)
+        except JsonParseError as error:
+            raise ChoiceProtocolError("The judge returned invalid JSON") from error
 
     @abstractmethod
     def _request(

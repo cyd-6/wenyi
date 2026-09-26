@@ -50,3 +50,32 @@ def test_project_stats_read_workflow_usage_and_timing(monkeypatch, initialized):
     }
     assert configuration.project_stats("test") == expected
     assert configuration.project_stats("test") == expected
+
+
+def test_choice_capabilities_and_project_judge_validation():
+    from wenyi_api.config_documents import config_document, project_document
+    from wenyi_api.project_service import effective_config
+    from wenyi_core.config import Config
+
+    caps = configuration.capabilities()
+    assert caps["provider_capabilities"]["typesafe"] == {"text": False, "choice": True}
+    assert (
+        next(op for op in caps["operations"] if op["id"] == "translation.judge")["request_kind"]
+        == "choice"
+    )
+    defaults = Config.from_dict({"llm": {"preset": "fake"}})
+    project = {"id": "test-project", "source_lang": "en", "target_lang": "zh"}
+    with pytest.raises(ValueError, match="explicit.*translation.judge"):
+        effective_config(project, document={"pipeline": {"best_of_three": True}}, defaults=defaults)
+    config = effective_config(
+        project,
+        document={
+            "pipeline": {"best_of_three": True},
+            "llm": {"routes": {"translation.judge": {"model": "default_cheap"}}},
+        },
+        defaults=defaults,
+    )
+    assert project_document(config)["pipeline"]["best_of_three"] is True
+    snapshot = Config.from_dict(config_document(config))
+    assert snapshot.pipeline.best_of_three is True
+    assert snapshot.llm.routes["translation.judge"].model == "default_cheap"

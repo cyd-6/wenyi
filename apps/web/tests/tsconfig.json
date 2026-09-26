@@ -4,6 +4,8 @@
     "lib": ["ES2022", "DOM"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "baseUrl": "..",
+    "paths": { "@/*": ["src/*"] },
     "strict": true,
     "noEmit": true,
     "types": ["node"],

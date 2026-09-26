@@ -1,5 +1,30 @@
 /** Canonical interface messages. Keys are shared by every locale. */
 const en = {
+  "candidates.mode": "Best of three",
+  "candidates.judge": "Translation judge",
+  "candidates.chooseJudge": "Choose a registered judge model",
+  "candidates.modeHelp":
+    "Normally each batch uses three translation requests, optionally three polishing requests and one judge request. Select one complete batch. Exact duplicates allow at most two additional generations. If the judge fails, try configured fallbacks and the quality tier. Register JEV in global model settings or select another model.",
+  "candidates.compare": "Candidate comparison",
+  "candidates.none": "No candidate record for this paragraph.",
+  "candidates.batchHelp":
+    "Paragraphs {first}–{last} were judged together. The winner applies to the whole batch.",
+  "candidates.generating": "Generating candidates",
+  "candidates.polishing": "Polishing candidates",
+  "candidates.judging": "Awaiting a judge decision",
+  "candidates.selected": "Candidate selected",
+  "candidates.published": "Selected translation saved",
+  "candidates.winner": "Selected for this batch: {id}",
+  "candidates.judgedBy": "Judge: {model}",
+  "candidates.fallback": "A fallback judge made this selection.",
+  "candidates.confidence": "Judge confidence: {value}%",
+  "candidates.changed":
+    "The current translation has changed since this selection. The candidate record below preserves the original decision.",
+  "candidates.candidate": "Candidate {id}",
+  "candidates.duplicate": "Identical to candidate {id}",
+  "candidates.pending": "Candidate not ready yet",
+  "candidates.beforePolish": "Translation before polishing",
+  "candidates.wholeBatch": "Compare the complete batch",
   "common.untitledChapter": "Untitled chapter",
   "appLayout.wenyi": "Wenyi",
   "appLayout.projects": "Projects",

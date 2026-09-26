@@ -51,6 +51,10 @@ def capabilities() -> dict:
         "output_formats": ["epub", "txt", "html", "markdown", "pdf", "docx", "srt"],
         "pdf": {"backends": ["mineru", "babeldoc"], "engines": engines, "export_backends": engines},
         "providers": list(PROVIDERS),
+        "provider_capabilities": {
+            name: {"text": spec.adapter_type().supports_text, "choice": True}
+            for name, spec in PROVIDERS.items()
+        },
         "operations": [asdict(spec) for spec in OPERATIONS.values()],
     }
 
@@ -167,6 +171,7 @@ def workflow(pid: str) -> dict:
         if kind in {"translation", "chapter_translation"}:
             add("translation", "分批翻译章节")
             add("polish", "批次内润色", pipeline.get("polish"))
+            add("best_of_three", "三候选择优", pipeline.get("best_of_three", False))
             add("annotation_alignment", "逐段注释定位", pipeline.get("annotation_alignment"))
         if kind in {"translation", "review"}:
             review = kind == "review" or pipeline.get("review", False)

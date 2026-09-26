@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/form";
 import { ErrorNotice } from "@/components/ui/data";
 import { RevisionHistory } from "./RevisionHistory";
+import { CandidateComparison } from "./CandidateComparison";
 
 export function ParagraphEditor({
   pid,
@@ -30,7 +31,9 @@ export function ParagraphEditor({
   const dialog = useRef<HTMLDialogElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const body = useRef<HTMLDivElement>(null);
-  const [view, setView] = useState(initialView);
+  const [view, setView] = useState<"edit" | "history" | "candidates">(
+    initialView,
+  );
   const [baseline, setBaseline] = useState(segment.target);
   const [draft, setDraft] = useState(segment.target ?? "");
   const history = useQuery({
@@ -143,7 +146,7 @@ export function ParagraphEditor({
         aria-label={t("proofreading.paragraphEditor")}
         className="flex shrink-0 gap-5 border-b px-5"
       >
-        {(["edit", "history"] as const).map((tab) => (
+        {(["edit", "history", "candidates"] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -159,14 +162,17 @@ export function ParagraphEditor({
                 ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
               ) {
                 event.preventDefault();
+                const tabs = ["edit", "history", "candidates"] as const;
                 const next =
                   event.key === "Home"
                     ? "edit"
                     : event.key === "End"
-                      ? "history"
-                      : view === "edit"
-                        ? "history"
-                        : "edit";
+                      ? "candidates"
+                      : tabs[
+                          (tabs.indexOf(view) +
+                            (event.key === "ArrowRight" ? 1 : 2)) %
+                            3
+                        ];
                 setView(next);
                 document.getElementById(`paragraph-tab-${next}`)?.focus();
               }
@@ -174,7 +180,9 @@ export function ParagraphEditor({
           >
             {tab === "edit"
               ? t("common.translation")
-              : t("proofreading.changeHistory")}
+              : tab === "history"
+                ? t("proofreading.changeHistory")
+                : t("candidates.compare")}
           </button>
         ))}
       </div>
@@ -221,7 +229,14 @@ export function ParagraphEditor({
             </p>
           </section>
           <section className="min-w-0 space-y-3">
-            {view === "edit" ? (
+            {view === "candidates" ? (
+              <CandidateComparison
+                pid={pid}
+                chapterIndex={chapterIndex}
+                segmentIndex={segment.index}
+                currentTarget={segment.target}
+              />
+            ) : view === "edit" ? (
               <>
                 <label
                   htmlFor="paragraph-draft"

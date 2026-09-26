@@ -38,8 +38,8 @@ class Polisher(Agent):
             next_source=prompts.render_source_reference(next_source),
         )
         items = self._ask_json(system, user, operation="polish.body", key="polished", default=None)
-        if isinstance(items, list) and len(items) == n:
-            return [str(x) for x in items]
+        if isinstance(items, list) and len(items) == n and all(isinstance(x, str) for x in items):
+            return list(items)
         return list(targets)
 
     def polish_continue(
@@ -73,6 +73,6 @@ class Polisher(Agent):
             key="polished",
             default=None,
         )
-        if isinstance(items, list) and len(items) == n:
-            return [str(x) for x in items]
+        if isinstance(items, list) and len(items) == n and all(isinstance(x, str) for x in items):
+            return list(items)
         return None

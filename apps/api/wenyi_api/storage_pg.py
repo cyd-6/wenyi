@@ -32,6 +32,7 @@ class ProjectBusyError(BlockingIOError):
 class PostgresStorage:
     def __init__(self, project_id: str, pool: ConnectionPool, *, run_dir: str | None = None):
         self.project_id = project_id
+        self.event_run_id: str | None = None
         self._pool = pool
         self._run_dir = os.path.abspath(run_dir) if run_dir else None
         self._local = threading.local()
@@ -665,6 +666,9 @@ class PostgresStorage:
         }
 
     def log_event(self, event: str, **data: Any) -> None:
+        data = {**data, "project_id": self.project_id}
+        if self.event_run_id is not None:
+            data["run_id"] = self.event_run_id
         with self._conn as conn:
             conn.execute(
                 "INSERT INTO events(project_id,type,payload) VALUES(%s,%s,%s)",

@@ -29,6 +29,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
         out: str | None = None,
         pdf_engine: str = "weasyprint",
         polish: bool | None = None,
+        best_of_three: bool | None = None,
         review: bool | None = None,
         mono: bool | None = None,
         bilingual: bool | None = None,
@@ -43,6 +44,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
                 out=out,
                 pdf_engine=pdf_engine,
                 polish=polish,
+                best_of_three=best_of_three,
                 review=review,
                 mono=mono,
                 bilingual=bilingual,
@@ -60,6 +62,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
         fmt: str = "epub",
         out: str | None = None,
         polish: bool | None = None,
+        best_of_three: bool | None = None,
         review: bool | None = None,
         mono: bool | None = None,
         bilingual: bool | None = None,
@@ -73,6 +76,8 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
         ignored: list[str] = []
         if fmt != "epub":
             ignored.append("--format")
+        if best_of_three is not None:
+            ignored.append("--best-of-three/--no-best-of-three")
         if polish is not None:
             ignored.append("--polish/--no-polish")
         if review is not None:
@@ -121,6 +126,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
         out: str | None = None,
         pdf_engine: str = "weasyprint",
         polish: bool | None = None,
+        best_of_three: bool | None = None,
         review: bool | None = None,
         mono: bool | None = None,
         bilingual: bool | None = None,
@@ -136,6 +142,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
                 fmt=fmt or "epub",
                 out=out,
                 polish=polish,
+                best_of_three=best_of_three,
                 review=review,
                 mono=mono,
                 bilingual=bilingual,
@@ -145,6 +152,8 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
         fmt = resolve_output_format(input_path, fmt, console=console)
         pdf_engine = validate_pdf_engine(pdf_engine, console=console)
         config = context().load_config()
+        if best_of_three is not None:
+            config.pipeline.best_of_three = best_of_three
         if polish is not None:
             config.pipeline.polish = polish
         if review is not None:
@@ -285,6 +294,11 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
             "--pdf-engine",
             help="PDF renderer: weasyprint (default) / fpdf2",
         ),
+        best_of_three: bool | None = typer.Option(
+            None,
+            "--best-of-three/--no-best-of-three",
+            help="Generate three independent candidates and select one complete batch",
+        ),
         polish: bool | None = typer.Option(
             None,
             "--polish/--no-polish",
@@ -314,6 +328,7 @@ def register_workflows_commands(app: typer.Typer, context: ContextAccessor) -> N
             out=out,
             pdf_engine=pdf_engine,
             polish=polish,
+            best_of_three=best_of_three,
             review=review,
             mono=mono,
             bilingual=bilingual,

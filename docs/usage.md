@@ -42,6 +42,43 @@ uv run wenyi models check --for translate
 
 These commands preview routes and check credentials locally without requests. Keep the three default tiers or select models independently through `llm.routes`. See [configuration](configuration.md#models-and-operation-routing) for explicit config/usage conversion and budgets.
 
+## Compare translation candidates
+
+After [registering a judge](configuration.md#best-of-three-body-translation), enable
+three-candidate body translation for one invocation:
+
+```bash
+uv run wenyi translate book.epub --best-of-three
+uv run wenyi translate book.epub --best-of-three --no-polish
+uv run wenyi translate book.epub --no-best-of-three
+uv run wenyi models explain --operation translation.judge
+```
+
+The flag overrides `pipeline.best_of_three`; omitting it retains the saved configuration.
+With polishing enabled, the judge sees all three polished candidates. Otherwise it
+compares initial translations. A decision selects a whole batch, and completed formal
+paragraphs always skip retranslation. Title translation and SRT do not use this mode;
+SRT rejects these book-only CLI flags.
+
+In Web **Project settings → Workflow settings**, enable **Best of three** and select a
+registered **Translation judge**. Provider connections and model IDs are registered in
+global Settings. Each queued job retains its own configuration snapshot.
+
+In proofreading, open **Paragraph actions → Edit translation** or **Change history**, then
+the **Candidate comparison** tab. Candidates load on demand. The tab shows this paragraph's
+three alternatives, the winner for the entire batch, exact duplicate labels, the actual
+judge, fallback use and confidence when supplied. Expand a candidate to read the complete
+source/translation batch or its translation before polishing. Candidate records are read-only;
+use the existing translation editor for changes. If Review or a manual edit has since
+changed the saved translation, the current version is shown separately from the historical
+selection. Older projects display an empty state.
+
+If all judges fail, fix the judge configuration or credentials and run the same command
+again to reuse saved candidates. Oversized full evidence is never truncated: choose a
+judge with sufficient capacity or reduce `segment.max_tokens_per_batch`. A batch-boundary
+change intentionally generates new candidates for the new input. Request budgets, retries
+and candidate duplication can affect the number of calls; see [configuration](configuration.md).
+
 ## Multilingual translation (experimental)
 
 Run `uv run wenyi languages` to list built-in languages. Use this fragment in your configuration, retaining your existing model settings, for direct Chinese-to-English translation:

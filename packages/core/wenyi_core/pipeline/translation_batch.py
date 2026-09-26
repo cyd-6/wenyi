@@ -10,6 +10,7 @@ from ..agents.translator import Translator
 from ..glossary.store import GlossaryTerm
 from ..ingest.models import Segment
 from ..ingest.segmenter import batch_segments
+from ..llm.base import Messages
 from ..markup.ruby import strip_ruby_markers
 
 
@@ -76,6 +77,15 @@ class TranslationBatchExecutor:
 
     def execute(self, plan: BatchPlan, *, polish: bool) -> BatchResult:
         """Translate and optionally polish; the chapter service alone applies the result."""
+        targets = self.translate(plan)
+        if not polish:
+            return BatchResult(tuple(targets), (None,) * len(targets))
+        return self.polish(
+            plan, targets, self._translator.last_batch_turn, self._translator.last_batch_indices
+        )
+
+    def translate(self, plan: BatchPlan) -> list[str]:
+        """Expose the initial result for a durable candidate checkpoint."""
         terms = list(plan.terms)
         targets = self._translator.translate_batch(
             list(plan.sources),
@@ -89,11 +99,19 @@ class TranslationBatchExecutor:
             allow_empty_translations=plan.allow_empty_translations,
         )
         targets = [strip_ruby_markers(target) for target in targets]
-        before_polish: tuple[str | None, ...] = (None,) * len(targets)
-        if polish:
-            before_polish = tuple(targets)
-            turn = self._translator.last_batch_turn
-            indices = self._translator.last_batch_indices
+        return targets
+
+    def polish(
+        self,
+        plan: BatchPlan,
+        targets: list[str],
+        turn: Messages | None,
+        indices: list[int] | None,
+    ) -> BatchResult:
+        """Resume polishing from the candidate's own saved translation conversation."""
+        terms = list(plan.terms)
+        before_polish: tuple[str | None, ...] = tuple(targets)
+        if targets:
             polished: list[str] | None = None
             if turn is not None and indices is not None:
                 # Continue the translation conversation and restore filtered source positions.
@@ -110,7 +128,17 @@ class TranslationBatchExecutor:
                 )
             if len(polished) == len(targets):
                 targets = polished
-        return BatchResult(tuple(targets), before_polish)
+        # A polish response must not introduce blanks or alter preserved numeric/symbol content.
+        restored = []
+        for source, original, target in zip(plan.sources, before_polish, targets):
+            if not Translator._needs_translation(source):
+                target = source
+            elif not isinstance(target, str) or (
+                not plan.allow_empty_translations and not target.strip()
+            ):
+                target = original
+            restored.append(target)
+        return BatchResult(tuple(restored), before_polish)
 
 
 def resume_batches(segments: list[Segment], max_tokens: int) -> list[list[Segment]]:

@@ -31,9 +31,56 @@ ID 以字母开头，只能包含字母、数字、下划线和连字符。被�
 **恢复默认配置** 先载入草稿，点击 **保存配置** 后才生效。总设置重新载入服务端配置
 文件，并将创建模板恢复为标准翻译；项目设置使用当前全局默认值与本项目流程模板，
 保留翻译语言。恢复默认配置也不能删除仍被其他项目选用的模型，需要先调整这些选择。
-步骤下拉框直接显示实际档位，不再加“跟随默认档位”前缀；选回步骤的默认档位会清除
+步骤下拉框直接显示实际档位，不再加“跟随默认档位”前缀；选回文本操作的默认档位会清除
 模型覆盖，并保留已有备用路由。全局保存检查配置版本，过期编辑页需要
 重新加载再保存。
+
+## 正文三候选择优
+
+`pipeline.best_of_three` 默认为 `false`。开启时必须通过
+`llm.routes.translation.judge` 明确选择一个已注册模型，例如：
+
+```yaml
+llm:
+  preset: deepseek
+  providers:
+    typesafe:
+      kind: typesafe
+      api_key_env: TYPESAFE_API_KEY
+  models:
+    jev:
+      provider: typesafe
+      model: jev-1.13.0
+  routes:
+    translation.judge: {model: jev}
+pipeline:
+  best_of_three: true
+  polish: true
+```
+
+TypeSafe 使用原生 [Choice API](https://docs.typesafe.ai/api)，端点为
+`https://api.typesafe.ai/v1/systemone`，示例版本见[模型文档](https://docs.typesafe.ai/models)。
+密钥在 CLI 或服务器环境变量中设置。该适配器仅支持选择操作，不支持正文生成、润色或
+档位默认模型，没有专属模型参数。模型输出 token 上限只用于本地预算预留，不作为生成
+参数发送给 TypeSafe。完整证据由服务端按实际模型上下文窗口校验，输入过大时尝试下一个
+评审模型，不截断内容，也不以本地字节数代替模型 token 上限；可以减小
+`segment.max_tokens_per_batch`。
+
+如需替换 JEV，把 `translation.judge.model` 指向任意已注册文本模型，或明确选择一个
+档位。评审顺序固定为主模型、显式 `fallbacks`、当前 `strong` 模型，按实际模型身份去重。
+缺少凭据、服务错误或无效选择可转用下一模型；配置错误、取消或本次运行预算耗尽直接
+停止。全部评审失败时保留候选，供修正配置后续跑；低置信度只记录，不触发额外评审。
+`models list`、`models explain` 和工作流凭据检查使用同一顺序。
+
+三个候选独立生成并共享同一批次输入。`polish: true` 时分别润色后比较，关闭时比较初稿，
+评审只能选中完整一批。完全重复比较仅忽略各段首尾空白，每批跨续跑最多额外生成两次，
+仍重复则标记并保留。通常每批需要三次翻译、可选的三次润色和一次评审，对齐恢复、重复
+重试和评审备用调用会增加用量。标题和字幕维持现有流程。
+
+Web 在**总设置**注册 TypeSafe 连接和 JEV（或其他模型），再到项目流程设置开启
+**三候选择优**并选择评审模型。标准默认配置关闭此模式，快速出稿会明确关闭。
+开关仅影响尚未完成的批次。参见[候选对照](usage.md#候选对照)和
+[候选选择与检查点](pipeline.md#候选选择与检查点)。
 
 ## 语言
 
@@ -121,6 +168,7 @@ llm:
 | `openai-compatible` | 必填 `base_url`；可选 `api_key_env`；`reasoning_style` | `thinking`、`reasoning_effort`、`json_response_fallback`、`request_overrides` |
 | `orcarouter` | `https://api.orcarouter.ai/v1`；`ORCAROUTER_API_KEY`；`reasoning_style` | 同 `openai-compatible` |
 | `ollama`、`vllm` | `http://localhost:11434/v1`、`http://localhost:8000/v1`；可选密钥；`reasoning_style` | 同 `openai-compatible` |
+| `typesafe` | 原生 Choice API；`https://api.typesafe.ai/v1`、`TYPESAFE_API_KEY` | 仅选择操作，无模型参数 |
 | `fake` | 无网络、无需密钥 | 无提供商选项 |
 
 兼容端点的 `reasoning_style` 支持 `none`（默认）、`deepseek`、`openai`、`openrouter`。只有明确配置 `json_response_fallback: reasoning_content`，才会从网关的该字段读取有效 JSON；默认 `none`，非 JSON 推理文本不会被当作结果。Gemini 的 thinking level 和 budget 互斥。原始扩展字典依赖具体端点；离线校验无法保证远端模型接受这些参数。
@@ -139,6 +187,7 @@ DeepSeek 的 `reasoning_effort` 可设为 `low`、`high` 或 `max`；`thinking: 
 | `synopsis.book` | `fast` | 全书概要；1,200 token 输出提示 |
 | `translation.body` | `strong` | 正文翻译及段落对齐恢复 |
 | `translation.title` | `strong` | 章节与目录标题 |
+| `translation.judge` | 必须显式选择；`strong` 为最后备用 | 三候选模式整批择优 |
 | `polish.body` | `strong` | 译文润色 |
 | `glossary.extract` | `fast` | 术语抽取 |
 | `glossary.align_history` | `fast` | 历史译法对齐 |
@@ -192,7 +241,7 @@ llm:
 
 `deadline_seconds` 和 Ctrl+C 协作式停止排队请求与重试等待；已进入 SDK 的请求仍可能执行到完成或连接超时。完成结果保留供续跑；重新启动会获得一份新的运行预算。
 
-无状态请求可以显式设置 `fallbacks: [备用配置名]`。只有可重试的传输错误耗尽重试后才进入该链；认证、配置及输出结构错误不触发模型切换。可续跑的 `review.verify`、`review.arbitrate`、`autofix.verify` 对话禁止故障切换，避免一条取证轨迹混用模型。
+无状态文本请求可以显式设置 `fallbacks: [备用配置名]`。只有可重试的传输错误耗尽重试后才进入该链；认证、配置及输出结构错误不触发模型切换。可续跑的 `review.verify`、`review.arbitrate`、`autofix.verify` 对话禁止故障切换，避免一条取证轨迹混用模型。
 
 ### 用量与续跑
 
@@ -217,6 +266,7 @@ uv run wenyi models migrate-usage state/BOOK/targets/zh
 
 ```yaml
 pipeline:
+  best_of_three: false
   review: true
   polish: true
   rolling_context_segments: 6
@@ -239,6 +289,7 @@ pipeline:
   babeldoc_timeout: 600
 ```
 
+- `best_of_three`：默认关闭，生成三份独立候选并由明确配置的评审整批择优，见[配置说明](#正文三候选择优)。
 - `review`：默认开启；全书翻译完成时自动执行取证式全书审校。一键流程可用 `--no-review` 或设为 `false` 跳过。仍可显式调用 `wenyi review`。
 - `polish`：翻译后再调用强模型润色，质量可能提升，但显著增加耗时和成本。
 - `rolling_context_segments`：每批翻译附带的前文译文段数。翻译与润色还会内置附带同章下一条原文片段作为只读参考，此值为零时也保留后文参考；它不改变输出段数，也不写入滚动译文上下文。详见[全书理解与上下文](pipeline.md#全书理解与上下文)。

@@ -488,6 +488,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{pid}/chapters/{ci}/segments/{seg_idx}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Candidates */
+        get: operations["get_candidates_projects__pid__chapters__ci__segments__seg_idx__candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{pid}/chapters/{ci}/title": {
         parameters: {
             query?: never;
@@ -877,6 +894,55 @@ export interface components {
             /** Fmt */
             fmt?: string | null;
         };
+        /** CandidateComparison */
+        CandidateComparison: {
+            /** Batch Id */
+            batch_id: string;
+            /** Chapter */
+            chapter: number;
+            /** Segment Indices */
+            segment_indices: number[];
+            /** Sources */
+            sources: string[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "generating" | "polishing" | "judging" | "selected" | "published";
+            /** Candidates */
+            candidates: components["schemas"]["CandidateView"][];
+            decision?: components["schemas"]["ChoiceResult"] | null;
+            /**
+             * Extra Generations
+             * @default 0
+             */
+            extra_generations: number;
+        };
+        /** CandidateView */
+        CandidateView: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "A" | "B" | "C";
+            /** Raw Targets */
+            raw_targets?: string[] | null;
+            /** Targets */
+            targets?: string[] | null;
+            /**
+             * Polish Status
+             * @default pending
+             * @enum {string}
+             */
+            polish_status: "pending" | "complete" | "skipped";
+            /** Duplicate Of */
+            duplicate_of?: ("A" | "B" | "C") | null;
+            /**
+             * Generation
+             * @default 0
+             */
+            generation: number;
+        };
         /** Capabilities */
         Capabilities: {
             /** Languages */
@@ -888,6 +954,12 @@ export interface components {
             pdf: components["schemas"]["PDFCapabilities"];
             /** Providers */
             providers: string[];
+            /** Provider Capabilities */
+            provider_capabilities?: {
+                [key: string]: {
+                    [key: string]: boolean;
+                };
+            };
             /** Operations */
             operations: {
                 [key: string]: unknown;
@@ -973,6 +1045,28 @@ export interface components {
             title_translated: string;
             /** Expected Title Translated */
             expected_title_translated: string | null;
+        };
+        /** ChoiceResult */
+        ChoiceResult: {
+            /** Choice */
+            choice: string;
+            /** Confidence */
+            confidence?: number | null;
+            /** Probabilities */
+            probabilities?: {
+                [key: string]: number;
+            } | null;
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Fingerprint */
+            fingerprint?: string | null;
+            /**
+             * Fallback Used
+             * @default false
+             */
+            fallback_used: boolean;
         };
         /** ConfigInput */
         ConfigInput: {
@@ -2672,6 +2766,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChapterSegments"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_candidates_projects__pid__chapters__ci__segments__seg_idx__candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                ci: number;
+                seg_idx: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateComparison"] | null;
                 };
             };
             /** @description Validation Error */

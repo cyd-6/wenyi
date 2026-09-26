@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .i18n.languages import require_language
 from .llm.configuration import LLMConfig
@@ -24,6 +24,13 @@ llm:
   preset: deepseek # All tiers: deepseek-flash, thinking enabled, reasoning_effort high
   # Add providers, models and routes to override individual operations.
   # Inspect effective settings with: wenyi models list
+  # Optional judge registration for best_of_three (a text model can also be selected):
+  # providers:
+  #   typesafe: {kind: typesafe, api_key_env: TYPESAFE_API_KEY}
+  # models:
+  #   jev: {provider: typesafe, model: jev-1.13.0}
+  # routes:
+  #   translation.judge: {model: jev}
 
 # ── Segmentation ─────────────────────────────────────────────────────────────────
 segment:
@@ -34,6 +41,7 @@ segment:
 
 # ── Pipeline options (quality and cost)───────────────────────────────────────────
 pipeline:
+  best_of_three: false # Generate three candidates and select one batch; requires translation.judge
   review: true # Run final review after whole-book translation; disable with --no-review
   align_retry_limit: 2
   polish: true # Polish the full translation with the strong tier; enabled by default and adds substantial cost
@@ -89,6 +97,8 @@ class SegmentConfig(BaseModel):
 
 class PipelineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    best_of_three: bool = False
 
     review: bool = True
     align_retry_limit: int = (
@@ -166,6 +176,19 @@ class Config(BaseModel):
     output: OutputConfig = Field(default_factory=OutputConfig)
     honorific_strategy: str = "keep_style"
     state_dir: str = "state"
+
+    def require_translation_judge(self) -> None:
+        if "translation.judge" not in self.llm.routes:
+            raise ValueError(
+                "pipeline.best_of_three requires an explicit llm.routes.translation.judge "
+                "selection from registered models"
+            )
+
+    @model_validator(mode="after")
+    def validate_translation_mode(self) -> Config:
+        if self.pipeline.best_of_three:
+            self.require_translation_judge()
+        return self
 
     @field_validator("source_lang")
     @classmethod
